@@ -7,7 +7,7 @@ from typing import Dict, Optional, List
 from dateutil import parser
 
 
-class TibantisScraper:
+class TibiantisScraper():
     def __init__(self):
         self.base_url = "https://tibiantis.online/"
         self.session = requests.Session()
