@@ -16,9 +16,6 @@ class TibantisScraper:
             "CET": 3600  # UTC+1
         }
 
-
-
-
     def _parse_date(self, raw_date: str) ->Optional[DateTime]:
         try:
             parsed_date = parser.parse(raw_date, tzinfos=self.time_zone_info)
@@ -35,7 +32,6 @@ class TibantisScraper:
             date_value = None
 
         return date_value
-
 
     def _level_convert_str_to_int(self, level_str: str) -> Optional[int]:
         try:
