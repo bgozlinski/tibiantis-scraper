@@ -1,0 +1,44 @@
+
+# Virtual environment
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# IDE / system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Env files
+app/db/.env
+
+# Docker
+*.log
+*.pid
+
+# Logs
+logs/
+
+# Byte-compiled / optimized / DLL files
+*.so
+
+# Alembic
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Databases
+*.db
+
+# ENV
+.env
+.env_temp
+
+.junie
