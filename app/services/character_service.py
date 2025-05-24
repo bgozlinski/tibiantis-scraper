@@ -1,5 +1,7 @@
 from typing import Dict, List, Optional, Tuple, Any
 import logging
+
+from app.schemas.character import character_schema
 from app.scraper.tibiantis_scraper import TibiantisScraper
 from app.db.models.character import Character
 from app.db.session import SessionLocal
@@ -68,10 +70,17 @@ class CharacterService:
 
             if existing_character:
                 return {"message": f"Character {name} already exists in the database"}, 200
+            try:
+                # Validate data with schema before creating model instance
+                validated_data = character_schema.load(character_data)
+                new_character = Character(**validated_data)
+                db.add(new_character)
+                db.commit()
 
-            new_character = Character(**character_data)
-            db.add(new_character)
-            db.commit()
+            except Exception as schema_error:
+                # Log the schema validation error but don't expose it directly
+                logger.error(f"Schema validation error: {str(schema_error)}")
+                raise Exception("Database error processing character data")
 
             return {"message": f"Character {name} added successfully"}, 201
 
