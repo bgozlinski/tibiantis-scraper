@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, Optional, List, Any
+from typing import Dict, Optional, List
 import requests
 from bs4 import BeautifulSoup
 from dateutil import parser
@@ -240,3 +240,42 @@ class TibiantisScraper():
             raise Exception(f"Error fetching player death data: {e}")
         except Exception as e:
             raise Exception(f"Error processing player death data: {e}")
+
+
+    def get_online_characters_list(self) -> Optional[List[str]]:
+        """
+        Fetch a list of online characters from Tibiantis website.
+
+        Returns:
+            List of character names currently online or None if fetching fails
+
+        Raises:
+            Exception: If there's an error fetching or processing data
+        """
+        try:
+            online_characters_url = f"{self.base_url}?page=whoisonline"
+            response = self.session.get(online_characters_url)
+            soup = BeautifulSoup(response.content, "html.parser")
+
+            if not soup:
+                return None
+
+            characters_online = []
+
+            table = soup.find("table", class_="tabi")
+
+            if not table:
+                return None
+
+            for row in table.find_all("tr")[2:]:
+                cols = row.find_all("td")
+                characters_online.append(cols[0].text.strip())
+
+            return characters_online
+
+        except requests.RequestException as e:
+            logger.warning(f"Error fetching online characters list: {e}")
+            raise Exception("Error fetching online characters list")
+        except Exception as e:
+            logger.warning(f"Error processing online characters: {e}")
+            raise Exception(f"Error processing online characters: {e}")
