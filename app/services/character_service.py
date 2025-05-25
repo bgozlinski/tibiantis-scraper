@@ -41,12 +41,24 @@ class CharacterService:
             name: Character name to fetch deaths for
 
         Returns:
-            List of death records or None if character not found
+            List of death records or None if character is not found
 
         Raises:
             Exception: If there's an error fetching or processing data
         """
         return self.scraper.get_character_deaths(character_name=name)
+
+    def get_online_characters_list(self) -> Optional[List[str]]:
+        """
+        Get a list of characters currently online on Tibiantis server.
+
+        Returns:
+            List of character names or None if fetching fails
+
+        Raises:
+            Exception: If there's an error fetching or processing data
+        """
+        return self.scraper.get_online_characters_list()
 
     def add_character(self, name: str) -> Tuple[Dict[str, Any], int]:
         """
@@ -91,3 +103,70 @@ class CharacterService:
 
         finally:
             db.close()
+
+    def get_all_characters_from_db(self) -> Optional[List[str]]:
+        """
+        Get a list of all character names from the database.
+
+        Returns:
+            List of character names stored in the database
+        """
+        db = SessionLocal()
+        try:
+            characters = db.query(Character.name).all()
+            return [character[0] for character in characters]
+        except Exception as e:
+            logger.error(f"Error fetching characters from database: {str(e)}")
+            raise Exception(f"Error fetching characters from database: {str(e)}")
+        finally:
+            db.close()
+
+    def add_new_online_characters(self) -> Dict[str, Any]:
+        """
+        Add only online characters that are not already in the database.
+
+        Returns:
+            Dictionary with results of the operation
+        """
+        # Get a list of online characters
+        online_characters = self.get_online_characters_list()
+
+        if online_characters is None:
+            raise Exception("Failed to fetch online characters")
+
+        # Get list of characters already in the database
+        db_characters = self.get_all_characters_from_db()
+
+        # Find characters that are online but not in the database
+        new_characters = [char for char in online_characters if char not in db_characters]
+
+        results = {
+            "total_online": len(online_characters),
+            "already_in_db": len(online_characters) - len(new_characters),
+            "new_characters": len(new_characters),
+            "added": 0,
+            "failed": 0,
+            "failures": []
+        }
+
+        # Add new characters to the database
+        for character_name in new_characters:
+            try:
+                result, status_code = self.add_character(character_name)
+
+                if status_code == 201:  # Created
+                    results["added"] += 1
+                else:
+                    results["failed"] += 1
+                    results["failures"].append({
+                        "name": character_name,
+                        "reason": result.get("error", "Unknown error")
+                    })
+            except Exception as e:
+                results["failed"] += 1
+                results["failures"].append({
+                    "name": character_name,
+                    "reason": str(e)
+                })
+
+        return results
