@@ -117,3 +117,43 @@ def add_character(name: str) -> Tuple[Response, int]:
     except Exception as e:
         logger.error(f"Error adding character {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@character_bp.route("/online", methods=["GET"])
+def get_online_characters() -> Tuple[Response, int]:
+    """
+    Get a list of characters currently online on Tibiantis server.
+
+    Returns:
+        JSON response with a list of online character names
+    """
+    try:
+        online_characters = character_service.get_online_characters_list()
+
+        if online_characters is None:
+            return jsonify({"error": "Failed to fetch online characters"}), 500
+
+        return jsonify({"data": online_characters}), 200
+
+    except Exception as e:
+        logger.error(f"Error fetching online characters: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@character_bp.route("/online/add", methods=["POST"])
+def add_online_characters() -> Tuple[Response, int]:
+    """
+    Add only online characters that are not already in the database.
+
+    Returns:
+        JSON response with results of the operation
+    """
+    try:
+        # Use the new service method that only adds characters not already in the database
+        results = character_service.add_new_online_characters()
+
+        return jsonify({"data": results}), 200
+
+    except Exception as e:
+        logger.error(f"Error adding online characters: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
