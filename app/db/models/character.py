@@ -1,4 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, Text
+from sqlalchemy.orm import relationship
+
 from app.db.models.base import Base
 from datetime import datetime, UTC
 
@@ -20,3 +22,6 @@ class Character(Base):
     account_status = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now(UTC))
     updated_at = Column(DateTime, default=datetime.now(UTC), onupdate=datetime.now(UTC))
+
+    # Define relationship to BedmageMonitor model
+    bedmage_monitors = relationship("BedmageMonitor", back_populates="character")
