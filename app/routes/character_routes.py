@@ -1,6 +1,11 @@
 from flask import Blueprint, jsonify, Response, request
 from typing import Tuple
-from app.schemas.character import character_response_schema, character_request_schema, character_with_deaths_schema
+from app.schemas.character import (
+    character_response_schema,
+    character_request_schema,
+    character_with_deaths_schema,
+    character_login_time_schema
+)
 from app.schemas.death import deaths_schema
 from app.services.character_service import CharacterService
 import logging
@@ -156,4 +161,31 @@ def add_online_characters() -> Tuple[Response, int]:
     except Exception as e:
         logger.error(f"Error adding online characters: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+
+@character_bp.route("/<name>/login-time", methods=["GET"])
+def get_character_login_time(name: str) -> Tuple[Response, int]:
+    """
+    Get character data with minutes since last login.
+
+    Args:
+        name: Character name to check
+
+    Returns:
+        JSON response with character data and login time information
+    """
+    try:
+        login_time_data = character_service.get_minutes_sice_last_login(name)
+
+        if not login_time_data:
+            return jsonify({"error": f"Character not found or no login data available"}), 404
+
+        # Serialize the response using schema
+        result = character_login_time_schema.dump(login_time_data)
+        return jsonify({"data": result}), 200
+
+    except Exception as e:
+        logger.error(f"Error fetching character login time for {name}: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 
