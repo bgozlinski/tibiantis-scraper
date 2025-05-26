@@ -40,9 +40,17 @@ class CharacterWithDeathsSchema(CharacterSchema):
     deaths = fields.List(fields.Nested(DeathSchema))
 
 
+class CharacterLoginTimeSchema(Schema):
+    """Schema for character login time information."""
+
+    name = fields.Str(required=True)
+    minutes_since_last_login = fields.Int()
+    can_login = fields.Bool()
+
 # Schema instances
 character_schema = CharacterSchema()
 characters_schema = CharacterSchema(many=True)
 character_request_schema = CharacterRequestSchema()
 character_response_schema = CharacterResponseSchema()
 character_with_deaths_schema = CharacterWithDeathsSchema()
+character_login_time_schema = CharacterLoginTimeSchema()
