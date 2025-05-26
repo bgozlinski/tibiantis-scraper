@@ -189,3 +189,18 @@ def get_character_login_time(name: str) -> Tuple[Response, int]:
         return jsonify({"error": str(e)}), 500
 
 
+@character_bp.route("/update-all", methods=["POST"])
+def update_all_characters() -> Tuple[Response, int]:
+    """
+    Check all characters in the database for updates and update if needed.
+
+    Returns:
+        JSON response with results of the operation
+    """
+    try:
+        results = character_service.update_all_characters()
+        return jsonify({"data": results}), 200
+
+    except Exception as e:
+        logger.error(f"Error updating characters: {str(e)}")
+        return jsonify({"error": str(e)}), 500
