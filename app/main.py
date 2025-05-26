@@ -3,6 +3,7 @@ from app.config import get_config
 from app.routes.character_routes import character_bp
 import logging
 from app.utils.error_handlers import register_error_handlers
+from app.utils.scheduler import init_scheduler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,6 +22,9 @@ def create_app():
 
     # Register error handlers
     register_error_handlers(app)
+
+    # Initialize and start scheduler
+    init_scheduler(app)
 
     @app.route("/")
     def index():

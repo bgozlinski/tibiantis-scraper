@@ -153,7 +153,7 @@ class CharacterService:
         Returns:
             Dictionary with results of the operation
         """
-        # Get all characters from database
+        # Get all characters from a database
         characters = self.get_all_characters_full_from_db()
 
         results = {
