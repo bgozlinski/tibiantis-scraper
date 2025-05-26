@@ -175,7 +175,7 @@ def get_character_login_time(name: str) -> Tuple[Response, int]:
         JSON response with character data and login time information
     """
     try:
-        login_time_data = character_service.get_minutes_sice_last_login(name)
+        login_time_data = character_service.get_minutes_since_last_login(name)
 
         if not login_time_data:
             return jsonify({"error": f"Character not found or no login data available"}), 404

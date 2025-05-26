@@ -173,7 +173,7 @@ class CharacterService:
         return results
 
 
-    def get_minutes_sice_last_login(self, name: str) -> Optional[Dict[str, Any]]:
+    def get_minutes_since_last_login(self, name: str) -> Optional[Dict[str, Any]]:
         """
         Calculate minutes since the character's last login.
 
@@ -185,18 +185,18 @@ class CharacterService:
             or None if character not found
         """
 
-        characer_data = self.get_character_data(name)
+        character_data = self.get_character_data(name)
 
-        if not characer_data or not characer_data.get("last_login"):
+        if not character_data or not character_data.get("last_login"):
             return None
 
         # Calculate minutes since last login
         now = datetime.now()
-        last_login = characer_data["last_login"]
+        last_login = character_data["last_login"]
         time_diff = (now - last_login).total_seconds() / 60
 
         result = {
-            **characer_data,
+            **character_data,
             "minutes_since_last_login": int(time_diff),
             "can_login": time_diff >= 100
         }
