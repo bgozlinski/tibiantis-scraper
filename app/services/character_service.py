@@ -79,7 +79,8 @@ class CharacterService:
         db = SessionLocal()
 
         try:
-            existing_character = db.query(Character).filter(Character.name == character_data["name"]).first()
+            existing_character = db.query(Character).filter(
+                Character.name == character_data["name"]).scalar()
 
             if existing_character:
                 return {"message": f"Character {name} already exists in the database"}, 200
@@ -95,6 +96,7 @@ class CharacterService:
                 logger.error(f"Schema validation error: {str(schema_error)}")
                 raise Exception("Database error processing character data")
 
+            logger.info(f"Character {name} added to database")
             return {"message": f"Character {name} added successfully"}, 201
 
         except Exception as e:
