@@ -2,7 +2,6 @@ import logging
 
 from app.db.models import Character
 from app.db.session import SessionLocal
-from app.services.character_service import CharacterService
 from typing import Tuple, Any, Dict, List, Optional
 from app.db.models.bedmage_character import Bedmage
 
@@ -13,8 +12,9 @@ class BedmageService:
     """
     Service for bedmage-related operations.
     """
-    def __init__(self) -> None:
-        self.character_service = CharacterService()
+    def __init__(self, character_service=None) -> None:
+        from app.services.character_service import CharacterService
+        self.character_service = character_service or CharacterService()
 
     def add_bedmage_character(self, character_name: str) ->Tuple[Dict[str, Any], int]:
         """

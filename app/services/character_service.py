@@ -1,9 +1,7 @@
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
 import logging
-
 from app.schemas.character import character_schema
-from app.scraper.tibiantis_scraper import TibiantisScraper
 from app.db.models.character import Character
 from app.db.session import SessionLocal
 
@@ -15,9 +13,15 @@ class CharacterService:
     Service for character-related operations.
     """
 
-    def __init__(self) -> None:
-        """Initialize the character service."""
-        self.scraper = TibiantisScraper()
+    def __init__(self, scraper=None) -> None:
+        """
+        Initialize the character service.
+
+        Args:
+            scraper: TibiantisScraper instance (injected)
+        """
+        from app.scraper.tibiantis_scraper import TibiantisScraper
+        self.scraper = scraper or TibiantisScraper()
 
     def get_character_data(self, name: str) -> Optional[Dict[str, Any]]:
         """
