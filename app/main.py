@@ -1,10 +1,14 @@
 from flask import Flask, jsonify
 from app.config import get_config
-from app.routes.bedmage_routes import bedmage_bp
-from app.routes.character_routes import character_bp
+from app.routes.bedmage_routes import create_bedmage_blueprint
+from app.routes.character_routes import create_character_blueprint
 import logging
 from app.utils.error_handlers import register_error_handlers
 from app.utils.scheduler import init_scheduler
+from app.utils.di_container import DIContainer
+from app.utils.service_provider import register_services
+from app.services.character_service import CharacterService
+from app.services.bedmage_service import BedmageService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,11 +20,27 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(get_config())
 
+    # Create and configure the dependency injection container
+    container = DIContainer()
+    register_services(container)
+
+    # Store the container in the app for access in routes
+    app.container = container
+
     logger.info("Application startup complete. Performing startup tasks.")
 
-    # Register blueprints
-    app.register_blueprint(character_bp, url_prefix='/api/v1/characters')
-    app.register_blueprint(bedmage_bp, url_prefix='/api/v1/bedmages')
+    # Register blueprints with injected services
+    character_service = container.get(CharacterService)
+    bedmage_service = container.get(BedmageService)
+
+    app.register_blueprint(
+        create_character_blueprint(character_service),
+        url_prefix='/api/v1/characters'
+    )
+    app.register_blueprint(
+        create_bedmage_blueprint(bedmage_service),
+        url_prefix='/api/v1/bedmages'
+    )
 
     # Register error handlers
     register_error_handlers(app)
