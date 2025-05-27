@@ -1,6 +1,9 @@
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
 import logging
+
+from sqlalchemy import func
+
 from app.schemas.character import character_schema
 from app.db.models.character import Character
 from app.db.session import SessionLocal
@@ -252,8 +255,10 @@ class CharacterService:
         db = SessionLocal()
 
         try:
+            character_data["name"] = character_data["name"].lower()
+
             existing_character = db.query(Character).filter(
-                Character.name == character_data["name"]).scalar()
+                func.lower(Character.name) == func.lower(character_data["name"])).scalar()
 
             if existing_character:
                 return {"message": f"Character {name} already exists in the database"}, 200
