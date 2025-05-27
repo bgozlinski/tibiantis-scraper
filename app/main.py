@@ -1,5 +1,6 @@
 from flask import Flask, jsonify
 from app.config import get_config
+from app.routes.bedmage_routes import bedmage_bp
 from app.routes.character_routes import character_bp
 import logging
 from app.utils.error_handlers import register_error_handlers
@@ -19,6 +20,7 @@ def create_app():
 
     # Register blueprints
     app.register_blueprint(character_bp, url_prefix='/api/v1/characters')
+    app.register_blueprint(bedmage_bp, url_prefix='/api/v1/bedmages')
 
     # Register error handlers
     register_error_handlers(app)
