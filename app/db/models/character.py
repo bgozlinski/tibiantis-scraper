@@ -8,7 +8,7 @@ class Character(Base):
     __tablename__ = "characters"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
+    name = Column(String, unique=True, index=True)
     sex = Column(String, nullable=True)
     vocation = Column(String, nullable=True)
     level = Column(Integer, nullable=True)
