@@ -30,6 +30,7 @@ logs/
 *.so
 
 # Alembic
+alembic/versions/
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
