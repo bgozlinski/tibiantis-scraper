@@ -38,4 +38,30 @@ def create_bedmage_blueprint(bedmage_service: BedmageService):
             logger.error(f"Error adding bedmage character: {str(e)}")
             return jsonify({"error": str(e)}), 500
 
+    @bedmage_bp.route("/<name>/timer", methods=["GET"])
+    def get_bedmage_timer(name: str) -> Tuple[Response, int]:
+        """
+        Get bedmage timer information for a character.
+
+        Args:
+            name: Character name to check
+
+        Returns:
+            JSON response with timer information including
+            - name: Name of the player
+            - minutes_since_last_login: Time since last login in minutes
+            - can_login: Boolean indicating if the player can login (True if time >= 100 minutes)
+        """
+        try:
+            result, status_code = bedmage_service.get_bedmage_timer(character_name=name)
+            return jsonify(result), status_code
+
+        except Exception as e:
+            logger.error(f"Error adding bedmage character: {str(e)}")
+            return jsonify({"error": str(e)}), 500
+
     return bedmage_bp
+
+
+
+

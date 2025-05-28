@@ -1,9 +1,9 @@
 import logging
 
-from app.db.models import Character
 from app.db.session import SessionLocal
 from typing import Tuple, Any, Dict, List, Optional
 from app.db.models.bedmage_character import Bedmage
+from app.db.models.character import Character
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,51 @@ class BedmageService:
         except Exception as e:
             logger.error(f"Error fetching bedmage characters: {str(e)}")
             raise Exception(f"Error fetching bedmage characters: {str(e)}")
+
+        finally:
+            db.close()
+
+    def get_bedmage_timer(self, character_name: str) -> Tuple[Optional[Dict[str, Any]], int]:
+        """
+        Get bedmage timer information for a character.
+
+        Args:
+            character_name: Character name to check
+
+        Returns:
+            Tuple of (response_dict, status_code)
+            The response_dict contains:
+            - name: Name of the player
+            - minutes_since_last_login: Time since last login in minutes
+            - can_login: Boolean indicating if the player can login (True if time >= 100 minutes)
+        """
+        db = SessionLocal()
+
+        try:
+            # Check if the bedmage is in the bedmages table
+            bedmage = db.query(Bedmage).filter(Bedmage.character_name == character_name).scalar()
+            if not bedmage:
+                return {"error": f"Character {character_name} is not being monitored"}, 404
+
+            # Get character data and minutes since last login
+            login_data = self.character_service.get_minutes_since_last_login(character_name)
+
+            if not login_data:
+                return {"error": f"Could not retrieve login data for character {character_name}"}, 500
+
+            # Extract the required information
+            result = {
+                "name": character_name,
+                "minutes_since_last_login": login_data["minutes_since_last_login"],
+                "can_login": login_data["can_login"]  # True if time >= 100 minutes
+            }
+
+            return result, 200
+
+
+        except Exception as e:
+            logger.error(f"Error fetching bedmage timer for character {character_name}: {str(e)}")
+            return {"error": str(e)}, 500
 
         finally:
             db.close()
