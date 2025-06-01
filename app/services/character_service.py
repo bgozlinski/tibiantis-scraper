@@ -53,7 +53,7 @@ class CharacterService:
         """
         db = SessionLocal()
         try:
-            character = db.query(Character).filter(Character.name == name).scalar()
+            character = db.query(Character).filter(func.lower(Character.name) == func.lower(name)).scalar()
             return character
         except Exception as e:
             logger.error(f"Error fetching character {name} from database: {str(e)}")
