@@ -42,14 +42,16 @@ def init_scheduler(app):
 
     # Only start the scheduler in the main process when in debug mode
     if not app.debug or (app.debug and not os.environ.get('WERKZEUG_RUN_MAIN') == 'true'):
+        # Define the minutes variable before using it
+        minutes_interval = 2
         # Add job to run every 15 minutes
         scheduler.add_job(
             id='add_online_characters_job',
             func=scheduled_add_online_characters,
             trigger='interval',
-            minutes=15
+            minutes=minutes_interval
         )
     
         # Start scheduler
         scheduler.start()
-        logger.info("Scheduler started: add_online_characters will run every 15 minutes")
+        logger.info(f"Scheduler started: add_online_characters will run every {minutes_interval} minutes")
