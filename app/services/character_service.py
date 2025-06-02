@@ -255,8 +255,7 @@ class CharacterService:
         db = SessionLocal()
 
         try:
-            character_data["name"] = character_data["name"].lower()
-
+            # character_data["name"] = character_data["name"].lower()
             existing_character = db.query(Character).filter(
                 func.lower(Character.name) == func.lower(character_data["name"])).scalar()
 
