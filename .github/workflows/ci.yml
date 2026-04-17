@@ -20,9 +20,7 @@ jobs:
           python-version: "3.13"
           cache: pip
       - name: Install Poetry
-        run: pipx install poetry==2.0.1
-      - name: Select Python 3.13 for project venv
-        run: poetry env use python3.13
+        run: pipx install --python python3.13 poetry==2.0.1
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
       - name: Run pre-commit on all files
