@@ -319,7 +319,7 @@ poetry run pre-commit install --hook-type commit-msg   # dla Conventional Commit
 
 ```yaml
 default_language_version:
-  python: python3.12
+  python: python3.13
 
 repos:
   # Ogólne pliki / higiena repo
@@ -362,15 +362,15 @@ repos:
     rev: 1.22.1
     hooks:
       - id: django-upgrade
-        args: [--target-version, "6.0"]
+        args: [--target-version, "5.1"]   # max target tool zna; Django 6 bez nowej składni do automatycznej migracji
 
   # Poetry — spójność pyproject.toml + poetry.lock
+  # Wersja 2.x wymagana — projekt używa PEP 621 `[project]` (stare Poetry 1.8 nie rozumie).
   - repo: https://github.com/python-poetry/poetry
-    rev: 1.8.4
+    rev: 2.0.1
     hooks:
       - id: poetry-check
-      - id: poetry-lock
-        args: [--no-update]
+      - id: poetry-lock   # Poetry 2.x: `--no-update` deprecated, lock nie rusza wersji domyślnie
 
   # Sekrety — ostatnia linia obrony przed commitowaniem tokenów
   - repo: https://github.com/gitleaks/gitleaks
@@ -423,10 +423,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: pip
       - name: Install Poetry
-        run: pipx install poetry==1.8.4
+        run: pipx install poetry==2.0.1
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
       - name: Run pre-commit on all files
@@ -471,9 +471,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: pip
-      - run: pipx install poetry==1.8.4
+      - run: pipx install poetry==2.0.1
       - run: poetry install --no-interaction --no-root
       - name: Migrate
         run: poetry run python manage.py migrate --noinput
@@ -545,8 +545,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - run: pipx install poetry==1.8.4
+          python-version: "3.13"
+      - run: pipx install poetry==2.0.1
       - run: poetry install --no-interaction --no-root
       - name: pip-audit
         run: poetry run pip-audit --strict
@@ -657,6 +657,11 @@ docker compose exec web python manage.py migrate
 13. **Nie obniżaj coverage threshold** w CI, żeby przeszedł build. Zamiast tego dopisz brakujące testy.
 14. **Nowe zależności deweloperskie** (lintery, formattery) idą do `pre-commit-config.yaml`, nie do `pyproject.toml`. Odwrotnie — biblioteki używane w kodzie aplikacji idą do Poetry, nie do pre-commit.
 15. **Wiadomość commita** musi być zgodna z Conventional Commits (wymusza to hook `conventional-pre-commit`). Format: `type(scope): message`, np. `feat(bedmages): add 100min regen tracker`.
+16. **Poetry 2.x + PEP 621** — `pyproject.toml` używa tabeli `[project]` (PEP 621), nie legacy `[tool.poetry]`. Konsekwencje:
+    - Pole `requires-python` wymaga PEP 440 (`>=3.13,<4.0`), **nie** Poetry-owego caret (`^3.13`).
+    - Hooki `poetry-check`/`poetry-lock` muszą być z rev Poetry **2.x** (1.8.x nie rozumie `[project]`).
+    - Flag `--no-update` przy `poetry lock` deprecated w 2.x — nie dodawaj go.
+    - Zależności w `[project.dependencies]` dalej parsuje Poetry, więc tam `^` działa (Poetry sam przekłada na `>=X,<Y`).
 
 ---
 
