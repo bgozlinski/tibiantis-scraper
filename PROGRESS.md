@@ -15,8 +15,8 @@ Wszystkie 3 zadania ukończone, milestone zamknięty.
 _(pusto)_
 
 ### Następne (M1)
-- 🔜 #4 [M1-D4] Model `Character` + migracja + admin
-- 🔜 #5 [M1-D5] Django admin z wyszukiwaniem + `GET /admin/characters/character/`
+- 🔜 #4 [M1-D4] apps/ struktura + app `characters` zarejestrowana
+- 🔜 #5 [M1-D5] Model `Character` + migracja + admin + test job w CI + pierwszy test
 - 🔜 #6 [M1-D6] Service layer: `upsert_character()`
 - 🔜 #7 [M1-D7] Scrapy: minimalny spider `character_spider`
 - 🔜 #8 [M1-D8] Pipeline Scrapy → service + management command (**M1 done**)
