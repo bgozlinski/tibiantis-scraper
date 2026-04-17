@@ -185,3 +185,12 @@ fabric.properties
 .idea
 
 .claude
+
+*.pyc
+*.sqlite3
+/staticfiles/
+/media/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.vscode/
