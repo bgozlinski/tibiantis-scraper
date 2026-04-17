@@ -19,9 +19,7 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-      - name: Install Poetry
-        run: pipx install --python python3.13 poetry==2.1.4
-      - name: Install dependencies
-        run: poetry install --no-interaction --no-root --all-groups
+      - name: Install pre-commit
+        run: pip install pre-commit
       - name: Run pre-commit on all files
-        run: poetry run pre-commit run --all-files --show-diff-on-failure
+        run: pre-commit run --all-files --show-diff-on-failure
