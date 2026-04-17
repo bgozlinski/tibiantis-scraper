@@ -42,6 +42,12 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
 ]
 
+LOCAL_APPS = [
+    "apps.characters",
+]
+
+INSTALLED_APPS += LOCAL_APPS
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -113,3 +119,5 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
