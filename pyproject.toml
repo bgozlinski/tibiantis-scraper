@@ -7,11 +7,13 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.13,<4.0"
-dependencies = [
-    "django (>=6.0.4,<7.0.0)",
-    "django-environ (>=0.13.0,<0.14.0)",
-    "psycopg[binary] (>=3.2,<4.0)"
-]
+  dependencies = [
+      "django (>=6.0.4,<7.0.0)",
+      "django-environ (>=0.13.0,<0.14.0)",
+      "psycopg[binary] (>=3.2,<4.0)",
+      "django-stubs-ext (>=5.1.0,<6.0.0)"
+  ]
+
 
 
 [build-system]
@@ -27,7 +29,8 @@ dev = [
     "ruff (>=0.15.11,<0.16.0)",
     "mypy (>=1.20.1,<2.0.0)",
     "django-stubs (>=6.0.2,<7.0.0)",
-    "djangorestframework-stubs (>=3.16.9,<4.0.0)"
+    "djangorestframework-stubs (>=3.16.9,<4.0.0)",
+    "pytest-cov (>=7.1.0,<8.0.0)"
 ]
 
 [tool.ruff]
@@ -38,7 +41,21 @@ dev = [
 "config/settings/*.py" = ["F403", "F405"]
 
 [tool.mypy]
+plugins = ["mypy_django_plugin.main"]
+strict = true
+
+[[tool.mypy.overrides]]
+module = "apps.*.migrations.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "environ"
+ignore_missing_imports = true
 
 [tool.django-stubs]
+django_settings_module = "config.settings.stubs"
 
 [tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.dev"
+python_files = ["test_*.py"]
+testpaths = ["tests"]

@@ -23,3 +23,57 @@ jobs:
         run: pip install pre-commit
       - name: Run pre-commit on all files
         run: pre-commit run --all-files --show-diff-on-failure
+
+  test:
+    name: Pytest
+    needs: lint
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tibiantis_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+      mongo:
+        image: mongo:7
+        ports: ["27017:27017"]
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/tibiantis_test
+      REDIS_URL: redis://localhost:6379/0
+      CELERY_BROKER_URL: redis://localhost:6379/1
+      MONGO_URL: mongodb://localhost:27017
+      MONGO_DB: tibiantis_logs_test
+      DJANGO_SECRET_KEY: test-only-not-a-real-secret
+      DJANGO_DEBUG: "False"
+      DJANGO_ALLOWED_HOSTS: "*"
+      DISCORD_BOT_TOKEN: test-token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pipx install --python python3.13 poetry==2.1.4
+      - run: poetry install --no-interaction --no-root --all-groups
+      - name: Migrate
+        run: poetry run python manage.py migrate --noinput
+      - name: Run tests
+        run: poetry run pytest --cov=apps --cov-report=xml --cov-fail-under=0
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
