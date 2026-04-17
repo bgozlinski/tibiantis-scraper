@@ -4,19 +4,21 @@
 Wszystkie 3 zadania ukończone, milestone zamknięty.
 
 ## Następny milestone: M1 — First character scrape
-**Status:** 0/5 dni — start kiedy gotowy
+**Status:** 1/5 dni
 
 ### Ukończone (M0)
 - ✅ #1 [M0-D1] Inicjalizacja repo + GitHub + branch protection (2026-04-17) — PR [#9](https://github.com/bgozlinski/tibiantis-scraper/pull/9) — squash `d611e2a`
 - ✅ #2 [M0-D2] Django 6 project + Postgres lokalnie + pierwszy runserver (2026-04-17) — PR [#10](https://github.com/bgozlinski/tibiantis-scraper/pull/10) — squash `cc89de3`
 - ✅ #3 [M0-D3] pre-commit + ruff + mypy + CI lint (2026-04-17) — PR [#11](https://github.com/bgozlinski/tibiantis-scraper/pull/11) — squash `1f9b072`
 
+### Ukończone (M1)
+- ✅ #4 [M1-D4] apps/ struktura + app `characters` zarejestrowana (2026-04-17) — PR [#12](https://github.com/bgozlinski/tibiantis-scraper/pull/12) — squash `10bbf44`
+
 ### W trakcie
 _(pusto)_
 
 ### Następne (M1)
-- 🔜 #4 [M1-D4] Model `Character` + migracja + admin
-- 🔜 #5 [M1-D5] Django admin z wyszukiwaniem + `GET /admin/characters/character/`
+- 🔜 #5 [M1-D5] Model `Character` + migracja + admin + test job w CI + pierwszy test
 - 🔜 #6 [M1-D6] Service layer: `upsert_character()`
 - 🔜 #7 [M1-D7] Scrapy: minimalny spider `character_spider`
 - 🔜 #8 [M1-D8] Pipeline Scrapy → service + management command (**M1 done**)
@@ -34,7 +36,11 @@ _(pusto)_
 - **Squash-only enforced (2026-04-17):** repo skonfigurowane tak, że UI GitHuba pokazuje tylko „Squash and merge" (`allow_merge_commit=false`, `allow_rebase_merge=false`).
 
 ### Obserwacje techniczne do adresowania w kolejnych issues
-- W `config/settings/base.py` brakuje `DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'` — Django rzuci `W042` przy pierwszym modelu (#4).
+- ~~W `config/settings/base.py` brakuje `DEFAULT_AUTO_FIELD`~~ — rozwiązane w #4.
 - `dev.py` hardcoduje `DEBUG = True` i `ALLOWED_HOSTS = ['*']`, override'ując wartości z env. Do przemyślenia czy `DJANGO_DEBUG`/`DJANGO_ALLOWED_HOSTS` z `.env.example` mają sens dla dev.
-- CLAUDE.md §13 pokazuje rozbudowany `ci.yml` z Postgresem/Redisem/Mongo dla test joba — obecnie mamy tylko lint job. Test job wejdzie gdy pojawią się testy (Issue #4+).
+- CLAUDE.md §13 pokazuje rozbudowany `ci.yml` z Postgresem/Redisem/Mongo dla test joba — obecnie mamy tylko lint job. Test job wejdzie w #5.
 - `django-upgrade` target pinowany na `5.1` (maks. który narzędzie zna w rev `1.22.1`). Przy `pre-commit autoupdate` w przyszłości sprawdzić czy nowa rev wspiera `6.0`.
+- **Tech debt z #4 (do zadresowania przy #5 albo osobnym chore):**
+  - `CharactersConfig` ma `default_auto_field` — redundancja z globalnym `DEFAULT_AUTO_FIELD`.
+  - `INSTALLED_APPS` jest 2-way (tylko `LOCAL_APPS` wyodrębnione), AC wymagał 3-way (`DJANGO_APPS`/`THIRD_PARTY_APPS`/`LOCAL_APPS`). Rozszerzenie sensowne gdy pojawi się pierwsza third-party app.
+  - Orphan commits na `feat/4-character-model` (`49fee66`, `8812477` — cleanup `default_auto_field`; `854e8b8` — PROGRESS.md sync) **nie trafiły do master** bo squash merge odbył się przed reviewem. Branch do usunięcia, cleanup można odtworzyć przy #5.
