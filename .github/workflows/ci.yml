@@ -20,7 +20,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install Poetry
-        run: pipx install poetry==1.8.4
+        run: pipx install poetry==2.0.1
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
       - name: Run pre-commit on all files
