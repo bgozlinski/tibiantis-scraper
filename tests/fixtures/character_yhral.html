@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+	<head>
+<link rel="stylesheet" href="https://use.typekit.net/ntx0tbs.css">
+	<link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+<link href="https://fonts.cdnfonts.com/css/dejavu-serif" rel="stylesheet">
+
+		<link rel="stylesheet" id="css_st" href="new_lay/stylep.css?x1776475775">
+		<script type="text/javascript" src="new_lay/jquery.js"></script>
+		<link rel="shortcut icon" href="T.ico" />
+		<title>Tibiantis Online</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+	</head>
+	<!--<body class="parallax" id="parallax-1" data-image-src="new_lay/background.jpg">-->
+	<body style='min-height:100vh;'><a href="https://tibiantis.online/cdn-cgi/content?id=AbuEScrGCik_mg0cb.JPB1udrtTt9.HN.jZ3BNdmPVw-1776475775.4135141-1.0.1.1-odRKptqwmtt6OgzNgLarDdi5_DlqYeG9xmDMdOVxp_U" aria-hidden="true" rel="nofollow noopener" style="display: none !important; visibility: hidden !important"></a>
+	<div class="bck"></div>
+<script>
+// Used to detect whether the users browser is an mobile browser
+function isMobile() {
+    ///<summary>Detecting whether the browser is a mobile browser or desktop browser</summary>
+    ///<returns>A boolean value indicating whether the browser is a mobile browser or not</returns>
+
+    if (sessionStorage.desktop) // desktop storage
+        return false;
+    else if (localStorage.mobile) // mobile storage
+        return true;
+
+    // alternative
+    var mobile = ['iphone','ipad','android','blackberry','nokia','opera mini','windows mobile','windows phone','iemobile'];
+    for (var i in mobile) if (navigator.userAgent.toLowerCase().indexOf(mobile[i].toLowerCase()) > 0) return true;
+
+    // nothing found.. assume desktop
+    return false;
+}
+$(document).ready(function(){
+
+	var body = document.body, html = document.documentElement;
+	var outer = document.getElementById("outer");
+	var maintable = document.getElementsByClassName("maintable")[0]
+	var isFixed = false
+	var height_value = 0;
+	$(document).scroll(function(){
+		if ( isMobile() == false) {
+
+		height_value = (1864 * $(body).width()/1500)-$(window).height()
+		if($(document).scrollTop()>height_value && isFixed==false){
+		//	console.log("eee1")
+			body.style.backgroundAttachment = "fixed";
+			isFixed = true;
+			body.style.backgroundPosition = "center bottom";
+		}
+		else if($(document).scrollTop()<=height_value && isFixed==true){
+		//	console.log("eee2")
+			isFixed=false;
+			body.style.backgroundAttachment = "scroll";
+			body.style.backgroundPosition = "center 0px";
+		}
+		}
+	})
+
+
+})
+
+
+		</script>
+	<!-- <button style='position: absolute;' id="border">border changer (0)</button>
+	<button style='position: absolute;top: 25px;' id="css">css changer</button> -->
+		<table class="maintable" border="0" width="1080" cellpadding="0" align="center" cellspacing="0" style="margin-top:0px;">
+			<tr>
+				<td height="70" colspan="2" valign="top" class="top-bar">
+						<div class="sitebox" id="box1">
+
+						</div>
+						<div class="sitebox" id="box2">
+												</div>
+
+						<div id="online_box">
+								<div>Players Online</div><strong>170</strong>
+								<!--<li><img src='new_lay/status.png' alt="status" /><br /><b style='color: green;'>online</b></li>-->
+						</div>
+
+						<div class="sitebox" id="box3">
+
+						</div>
+						<div class="sitebox" id="box4">
+							<a href='https://www.youtube.com/tibiantisonline' target='_blank'><img class="yt" src="new_lay/yt_dark.png" width=32px /></a>
+							<a href='https://facebook.com/Tibiantis' target='_blank'><img class="fb" src="new_lay/fb.png" /></a>
+							<a href='https://discord.com/invite/YATGtun' target='_blank'><img class="di" src="new_lay/discord.png" /></a>
+							<a href='?page=twitch'><img class="tw" src="new_lay/twitch.png" /></a>
+						</div>
+
+				</td>
+			</tr>
+			<tr>
+				<td height="250" colspan="2" class="logo">
+					<div style='width: 100%; height: 245px; position: relative;text-align: center;top: 10px;z-index:999;'>
+						<a href="/"><img src='img3/smok.png' width='380' /></a>
+					</div>
+				</td>
+			</tr>
+		</table>
+
+		<div id=outer style="overflow:hidden">
+		<table class="maintable centertable" id=maincontent border="0" width="1072"  cellpadding="0" align="center" cellspacing="0" style="margin-top:0px;   outline: 1px solid transparent;" ></div>
+			<tr style="display: inline-block; min-height: 914px;">
+
+
+
+
+			<td width="153" valign="top">
+								<form action="index.php?page=LoginAccount" method="post">
+					<div class="menulogin"  style="min-height: 240px; position:relative">
+						<div></div>
+						<div style="min-height: 220px">
+													<span>Account number:</span>
+							<input type="text" class=minput3 name="acc" />
+							<span>Password:</span>
+							<input type="password" class=minput3 maxlength=29 name="pass" />
+							<input type="image" src="new_lay/login.png" />
+							<input type="hidden" name="zapisz" value="zapisz" />
+							<a href="?page=CreateAccount"><img src="new_lay/register.png" /></a>
+							<a href="?page=RecoverAccount">Account lost?</a>
+												</div>
+						<div></div>
+					</div>
+					</form>
+					<!--<ul class="menu community"><li>Community</li><li><a href="#">News</a></li><li><a href="#">Rules</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li></ul>
+					<ul class="menu about"><li>About</li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li></ul>
+					<ul class="menu fansites"><li>Fansites</li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li></ul>
+					<ul class="menu home"><li>Home</li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li></ul>
+					<ul class="menu library"><li>Library</li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li><li><a href="#">menu link</a></li></ul>-->
+
+					<ul class="menu home"><li>Home</li>
+						<li><a href="/">News</a></li>
+						<li><a href="?page=rules">Rules</a></li>
+
+						<li><a href="?page=download">Download</a></li>
+						<li><a href="?page=premium" class='blue'>Premium</a></li>
+						<li><!-- separator --></li>
+					</ul>
+					<ul class="menu community"><li>Community</li>
+						<li><a href="?page=character">Characters</a></li>
+						<li><a href="?page=whoisonline">Who Is Online</a></li>
+						<li><a href="?page=guilds">Guilds</a></li>
+						<li><a href="?page=houses">Houses</a></li>
+						<li><a href="?page=highscores">Highscores</a></li>
+						<li><a href="?page=census">Census</a></li>
+						<li><a href="?page=kills">Kill Statistics</a></li>
+						<li><a href="?page=bans">Exile</a></li>
+						<li><a href="?page=forum" class='blue'>Forum</a></li>
+						<li><!-- separator --></li>
+					</ul>
+					<ul class="menu library"><li>Library</li>
+											<li><a href="?page=exptable">Exp Table</a></li>
+						<li><a href="?page=fansites">Fansites</a></li>
+												<li><!-- separator --></li>
+					</ul>
+					<ul class="menu about"><li>About</li>
+											<li><a href="?page=about">What Is Tibiantis</a></li>
+						<li><a href="?page=faq">FAQ</a></li>
+						<li><a href="?page=terms">Terms of Use</a></li>
+						<li><a href="?page=privacypolicy">Privacy Policy</a></li>
+						<li><a href="?page=contact">Contact</a></li>
+						<li><!-- separator --></li>
+					</ul>
+				</td>
+
+			<td width="10"></td><td width="909" valign="top">
+									<div class="changelog">
+						<div>Changelog</div>
+						<div><b>08 Oct 2025</b> -  Thanks to player Tarsal, Tibiantis now has another fansite! We encourage you to check it out! The list of all <a href="https://tibiantis.online/index.php?page=fansites" class="menulink_hs">fansites</a> can be viewed here. (Please bear in mind that although fansites are usually very helpful, they are also created by players, so the information contained therein is not guaranteed to be accurate. Any inaccuracies should be reported to their authors.)
+<b style='text-align: right;display: block;'><a href='/?page=viewtopic&id=1&latest=1'>Check full changelog...</a></b>
+</div>
+						<div></div>
+					</div>
+
+					<div class="news" style="
+								width: auto;
+								min-width: 100% !important;
+								position: relative;
+  								height: auto;
+  								min-height: 100% !important;">
+
+						<div style="background: url('./new_lay/community.png?t=20'); "></div>
+						<div style='min-height: 930px !important;'>
+						<table width="100%" class="tabi"><tr><td colspan='2'><b>Character Information</b></td></tr><tr class='hover'><td width='200'>Name:</td><td>Yhral</td></tr><tr class='hover'><td>Sex:</td><td>male</td></tr><tr class='hover'><td>Vocation:</td><td>Royal Paladin</td></tr><tr class='hover'><td>Level:</td><td>118</td></tr><tr class='hover'><td>World:</td><td>Concordia</td></tr><tr class='hover'><td>Residence:</td><td>Thais</td></tr><tr class='hover'><td>House:</td><td><a href='?page=HouseAuction&id=10404&world=2' class='menulink_hs'>Lower Swamp Lane 3</a></td></tr><tr class='hover'><td>Guild Membership:</td><td>Rat of the <a href='?page=showguild&id=1018' class='menulink_hs'>Rat Cave</a></td></tr><tr class='hover'><td>Last Login:</td><td>18 Apr 2026 01:25:30 CEST</td></tr><tr class='hover'><td>Account Status:</td><td>Premium Account</td></tr></table><br /><br /><table border="0" width="100%"  class="tabi"><tr><td colspan='2'><b>Latest Deaths</b></td></tr><tr class='hover'><td style='width: 250px;'>12 Apr 2026 23:25:53 CEST</td><td>Killed at Level 115 by a deathslicer.</td></tr></table><br /><br /><table width="100%" class="tabi"  style="border-spacing: 0px"><tr ><td colspan=2 style="border-bottom: 1px solid #d4c0a1;"><b>Search Character</b></td></tr>
+<tr><td style="height: 40px;  width:220px; border-spacing: 0px; padding: 6px 6px;">
+<form action="" id=nform  method="GET">
+<div class=menulogin>
+<input type="hidden" name="page" value="character" />
+<input type="text" name="name"  class=minput2 placeholder="name" style="height:24px" /></td><td>
+<img src="new_lay/submit.png" style="cursor: pointer;" border="0" id="submit" onClick='nsubmit()'>
+<input type=submit id="hsubmit" hidden>
+</div>
+</form></td></tr>
+		</table><script>
+function nsubmit(){
+$("#hsubmit").click();
+
+}
+</script>
+						</div>
+
+						<div></div>
+					</div>
+			</div>
+
+				</td>
+			</tr>
+			<tr>
+			<td colspan=3> <br>
+			<div class="stopka">
+				<div class="stopka_srodek">© Copyright by Tibiantis Online 2020-2026. All rights reserved.</div> <br/>
+				<div class="stopka_srodek"> <a href="index.php?page=terms" class=menulink style='color:white'>Terms of Use</a> | <a href="index.php?page=privacypolicy" class=menulink style='color:white'>Privacy Policy</a> | <a href="index.php?page=contact" class=menulink style='color:white'>Contact</a> </div> <br />
+				<div class="stopka_srodek_2">All times are CEST (GMT+02:00). This page was generated at 03:29.
+				</div>
+			</div><br />
+
+
+			</td>
+			</tr>
+		</table>
+
+		<script>
+function docReady(fn) {
+    // see if DOM is already available
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+        // call on next available tick
+        setTimeout(fn, 1);
+    } else {
+        document.addEventListener("DOMContentLoaded", fn);
+    }
+}
+
+
+docReady(function() {
+
+		});
+/*$
+	var delta=$("body").height()-($("#maincontent").height()*0.1)+"px"
+document.documentElement.scrollHeight=delta;
+$("body").height(delta);
+
+
+	*/
+function toSS(pozostalyCzas)
+{
+	if (pozostalyCzas > 0)
+	{
+		var min = pozostalyCzas / 60;	// minuty
+		var h = min / 60;				// godziny
+
+		var sLeft = Math.floor(pozostalyCzas  % 60);	// pozostało sekund
+		var minLeft = Math.ceil(min % 60);				// pozostało minut
+		var hLeft = Math.floor(h);						// pozostało godzin
+
+		if (minLeft < 10)
+		  minLeft = "0" + minLeft;
+		if (sLeft < 10)
+		  sLeft = "0" + sLeft;
+
+		$("#toSS").html(hLeft + ":" + minLeft);
+	}
+	else
+		$("#box2").html("");
+	setTimeout(function(){ toSS(pozostalyCzas-1); }, 1000);
+}
+
+		$(function(){
+			$("#border").click(function(){
+				if($(".maintable").attr('border') == '0')
+				{
+					$(".maintable").attr('border', 1);
+					$("#border").html("border changer (1)");
+				}
+				else
+				{
+					$(".maintable").attr('border', 0);
+					$("#border").html("border changer (0)");
+				}
+
+			});
+			$("#css").click(function(){
+				if($("#css_st").attr('href') == "new_lay/stylep.css?x1776475775")
+					$("#css_st").attr('href', 'new_lay/styleold.css?1776475775');
+				else
+					$("#css_st").attr('href', 'new_lay/stylep.css?x1776475775');
+			});
+//	$(window).scroll(function() {
+//		if(($(window).scrollTop()+$(window).height())+10 > ($(document).width()*1.24375))
+//			$("body").css('background',"url('new_lay/background_big.jpg') no-repeat center top fixed").css('background-position','center -'+(($(document).width()*1.24375)-$(window).height())+'px').css('background-size','100% auto');
+//		else
+//			$("body").css('background',"url('new_lay/background_big.jpg') no-repeat center top").css('background-size','100% auto');
+//		});
+
+		toSS($("#toSS").html());
+		$("#online_box").click(function(){location.href='?page=whoisonline';});
+	});
+		</script>
+
+
+                        <div class="cookie" id="cookies_info"
+                 style="background: #d4c0a1;color: black; width: 100%;border: 1px solid black; position: fixed;z-index: 10000000;bottom: 0;left: 0;">
+                <div class="container group" style="width: 100%; max-width: 940px; margin: 0 auto; position: relative;  font-size:15px;    font-family: 'chaparral-pro', sans-serif; ">
+                    <div class="cookie_message" style="background: #d4c0a1; padding: 10px 200px 10px 20px; float: left;">
+                      This website may use cookies necessary for its proper functioning. Check our <a href=?page=privacypolicy#cookies class=menulink_hs>cookies policy</a> for more information.
+                    </div>
+                    <div class="cookie_btn"
+                         style="background: #d4c0a1; text-align: left; margin-top: 10px; margin-right: 10px; height:25px; width: 168px; position:absolute; top: 0; right: 0; ">
+                        <a href="#" style="color: #969690; line-height: 25px; font-weight: 600; text-transform: uppercase"
+                           onclick="return cookie_info_set();"><img src=new_lay/maleok.png></a>
+                    </div>
+                </div>
+            </div>
+            <script type="text/javascript">
+                function cookie_info_set(){
+                    var exdate = new Date();
+                    exdate.setDate( exdate.getDate()+365 );
+                    document.cookie = 'cookies_info=008290a198f6709259b4005; expires='+exdate.toUTCString()+'; path=/';
+                    var Info = document.getElementById('cookies_info');
+                    Info.parentNode.removeChild(Info);
+                    return false;
+                }
+
+            </script>
+
+
+
+	</body>
+
+	</html>
