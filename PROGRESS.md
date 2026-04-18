@@ -4,7 +4,7 @@
 Wszystkie 3 zadania ukończone, milestone zamknięty.
 
 ## Następny milestone: M1 — First character scrape
-**Status:** 2/5 dni
+**Status:** 3/5 dni
 
 ### Ukończone (M0)
 - ✅ #1 [M0-D1] Inicjalizacja repo + GitHub + branch protection (2026-04-17) — PR [#9](https://github.com/bgozlinski/tibiantis-scraper/pull/9) — squash `d611e2a`
@@ -14,12 +14,12 @@ Wszystkie 3 zadania ukończone, milestone zamknięty.
 ### Ukończone (M1)
 - ✅ #4 [M1-D4] apps/ struktura + app `characters` zarejestrowana (2026-04-17) — PR [#12](https://github.com/bgozlinski/tibiantis-scraper/pull/12) — squash `10bbf44`
 - ✅ #5 [M1-D5] Model `Character` + migracja + admin + test job w CI + pierwszy test (2026-04-18) — PR [#14](https://github.com/bgozlinski/tibiantis-scraper/pull/14) — squash `831344c`
+- ✅ #6 [M1-D6] Service layer: `upsert_character()` (2026-04-18) — PR [#16](https://github.com/bgozlinski/tibiantis-scraper/pull/16) — squash `04d1b88`
 
 ### W trakcie
 _(pusto)_
 
 ### Następne (M1)
-- 🔜 #6 [M1-D6] Service layer: `upsert_character()`
 - 🔜 #7 [M1-D7] Scrapy: minimalny spider `character_spider`
 - 🔜 #8 [M1-D8] Pipeline Scrapy → service + management command (**M1 done**)
 
@@ -48,3 +48,9 @@ _(pusto)_
   - `coverage threshold = 0` — AC #5 Pułapka F mówi podnosić do 70 w osobnym PR post-M1. Kandydat na Issue #9.
   - Branch protection master: dodać required status check `test / Pytest` (obecnie tylko `lint`).
   - CLAUDE.md §12 pokazuje `[dependency-groups]` (PEP 735) jako pattern — w praktyce okazało się że Poetry 2.1.4 nie instaluje takich groups przez `--all-groups`. Teraz używamy `[tool.poetry.group.dev.dependencies]` (Poetry-native). CLAUDE.md wymaga update żeby odzwierciedlał rzeczywistość.
+- **Tech debt z #6 (do adresowania post-M1):**
+  - Brak docstringa na `upsert_character()` — funkcja self-explanatory, ale AC #6 sugerowało docstring (max 3 linie). Dopisać przy najbliższej okazji (np. razem z #7 jak spider zacznie wywoływać service).
+  - Race condition w `update_or_create`: dwa Celery workery scrapeujące tę samą postać równocześnie mogą trafić w `IntegrityError` na unique `name`. Do ogarnięcia w #8 (pipeline) — albo retry, albo `select_for_update` w transakcji, albo dedup po stronie schedulera.
+
+### Notatki z retro M1
+- **#6 (merge 2026-04-18):** PyCharm auto-import wrzucił `from IPython.core.magic_arguments import defaults` do `types.py` bo zmienna lokalna nazywała się `defaults`. Wniosek: po napisaniu service przelecieć wzrokiem top-of-file imports, PyCharm czasem halucynuje. Drugi wniosek: mieszanie `services.py` i `types.py` w jednym pliku (pierwotnie wszystko w `types.py`) złapane w review — zgodnie z CLAUDE.md §3 logika do `services.py`, typy osobno. Trzeci: funkcja deklarowała `-> Character` ale nie miała `return` — mypy strict by to złapał, ale warto przed pushem odpalić `poetry run mypy apps/` lokalnie zamiast liczyć na CI.
