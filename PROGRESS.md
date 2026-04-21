@@ -4,7 +4,7 @@
 Wszystkie 3 zadania ukończone, milestone zamknięty.
 
 ## Następny milestone: M1 — First character scrape
-**Status:** 3/5 dni
+**Status:** 4/5 dni
 
 ### Ukończone (M0)
 - ✅ #1 [M0-D1] Inicjalizacja repo + GitHub + branch protection (2026-04-17) — PR [#9](https://github.com/bgozlinski/tibiantis-scraper/pull/9) — squash `d611e2a`
@@ -15,12 +15,12 @@ Wszystkie 3 zadania ukończone, milestone zamknięty.
 - ✅ #4 [M1-D4] apps/ struktura + app `characters` zarejestrowana (2026-04-17) — PR [#12](https://github.com/bgozlinski/tibiantis-scraper/pull/12) — squash `10bbf44`
 - ✅ #5 [M1-D5] Model `Character` + migracja + admin + test job w CI + pierwszy test (2026-04-18) — PR [#14](https://github.com/bgozlinski/tibiantis-scraper/pull/14) — squash `831344c`
 - ✅ #6 [M1-D6] Service layer: `upsert_character()` (2026-04-18) — PR [#16](https://github.com/bgozlinski/tibiantis-scraper/pull/16) — squash `04d1b88`
+- ✅ #7 [M1-D7] Scrapy: minimalny spider `character_spider` (2026-04-18) — PR [#18](https://github.com/bgozlinski/tibiantis-scraper/pull/18) — squash `114ff86`
 
 ### W trakcie
 _(pusto)_
 
 ### Następne (M1)
-- 🔜 #7 [M1-D7] Scrapy: minimalny spider `character_spider`
 - 🔜 #8 [M1-D8] Pipeline Scrapy → service + management command (**M1 done**)
 
 ### Notatki z retro M0
@@ -51,6 +51,14 @@ _(pusto)_
 - **Tech debt z #6 (do adresowania post-M1):**
   - Brak docstringa na `upsert_character()` — funkcja self-explanatory, ale AC #6 sugerowało docstring (max 3 linie). Dopisać przy najbliższej okazji (np. razem z #7 jak spider zacznie wywoływać service).
   - Race condition w `update_or_create`: dwa Celery workery scrapeujące tę samą postać równocześnie mogą trafić w `IntegrityError` na unique `name`. Do ogarnięcia w #8 (pipeline) — albo retry, albo `select_for_update` w transakcji, albo dedup po stronie schedulera.
+- **Tech debt z #7 (do adresowania post-M1):**
+  - **Bug `self.name` vs `self.character_name` w `character_spider.py:30`** — log warning dla postaci "not found" pokazuje nazwę spidera (`"character"`), nie imię postaci. `Spider.name` to class-level attr Scrapy, instance var nazywa się `self.character_name`. Wyłapie test z log capture (follow-up).
+  - **Bug `_parse_last_login` crashuje na "Never logged in"** — `rsplit(" ", 1)` na takim stringu da `("Never logged", "in")` i `strptime` rzuci `ValueError`. Potrzebny early return + fixtura edge case.
+  - **Brak defensywnego parsowania `level`** — `int(level_raw)` pada gdy layout strony się zmieni lub pojawi się np. `"118 (deleted)"`. Rozważyć regex `^\d+` albo try/except.
+  - **`_parse_last_login` hardcoduje `Europe/Berlin`** zamiast walidować odczytaną TZ (`_tz` jest odrzucona). Nit, ale gdyby serwer kiedyś wysłał inny TZ, cichy bug. Minimum: assert `_tz in {"CEST","CET"}` albo warning.
+  - **Fragile fixture path `parents[3]`** w `tests/unit/scrapers/test_character_spider.py` — przy przeniesieniu katalogu cicho zwróci złą ścieżkę. Refactor do `conftest.py` w `tests/`.
+  - **Deviation od AC#7** (świadoma, nie bug): `scrapy.cfg` w rootcie repo zamiast `scrapers/`, wszystkie importy z prefiksem `scrapers.tibiantis_scrapers...`. Konsekwencja dla #8: management command musi ustawić `SCRAPY_SETTINGS_MODULE=scrapers.tibiantis_scrapers.settings` (z prefiksem) i uruchomić crawl z roota repo.
 
 ### Notatki z retro M1
 - **#6 (merge 2026-04-18):** PyCharm auto-import wrzucił `from IPython.core.magic_arguments import defaults` do `types.py` bo zmienna lokalna nazywała się `defaults`. Wniosek: po napisaniu service przelecieć wzrokiem top-of-file imports, PyCharm czasem halucynuje. Drugi wniosek: mieszanie `services.py` i `types.py` w jednym pliku (pierwotnie wszystko w `types.py`) złapane w review — zgodnie z CLAUDE.md §3 logika do `services.py`, typy osobno. Trzeci: funkcja deklarowała `-> Character` ale nie miała `return` — mypy strict by to złapał, ale warto przed pushem odpalić `poetry run mypy apps/` lokalnie zamiast liczyć na CI.
+- **#7 (merge 2026-04-18):** Spider parsuje fixture HTML poprawnie (6 testów green), wszystkie pola modelu pokryte. W retro-review wyszły 2 bugi niewyłapane przez testy (`self.name` w logu = nazwa spidera, nie postaci; `_parse_last_login` crashuje na "Never logged in") → follow-up PR dopisze fixturki edge-case i pokryje te ścieżki, bugi do naprawy w osobnym issue. **"Dependency conflicts" w PR title** sugeruje walkę z Poetry przy `poetry add scrapy` — warto spisać co się wydarzyło (bg: Scrapy pociąga Twisted + cryptography + lxml, potencjał kolizji z django-stubs). Świadoma deviation od AC: `scrapy.cfg` w root repo + prefiks `scrapers.` w importach → uprości #8 (brak `cd scrapers/`), ale w management command będzie `SCRAPY_SETTINGS_MODULE=scrapers.tibiantis_scrapers.settings` zamiast `tibiantis_scrapers.settings`.
