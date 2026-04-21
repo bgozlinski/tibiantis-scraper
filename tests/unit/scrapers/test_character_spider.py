@@ -140,14 +140,6 @@ def test_parse_high_level_character_with_long_guild() -> None:
     )  # stays within Character.guild_membership max_length
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known bug from #7 retro — _parse_last_login calls rsplit/strptime "
-        "unconditionally and raises ValueError on 'Never logged in'. "
-        "Remove xfail after the bug is fixed."
-    ),
-)
 def test_parse_character_never_logged_handles_gracefully() -> None:
     """Fresh characters have `Last Login: Never logged in` — spider must not crash.
 
@@ -179,14 +171,6 @@ def test_parse_character_never_logged_handles_gracefully() -> None:
     assert items[0]["name"] == "Newbie"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known bug from #7 retro — `self.logger.warning(f'Character not found: "
-        "{self.name}')` uses the spider class attr ('character') instead of "
-        "self.character_name. Remove xfail after the bug is fixed."
-    ),
-)
 def test_warning_log_contains_queried_character_name(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
