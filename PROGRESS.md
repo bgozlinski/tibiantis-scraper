@@ -3,8 +3,10 @@
 ## 🎉 Milestone M0 — Bootstrap COMPLETED (2026-04-17)
 Wszystkie 3 zadania ukończone, milestone zamknięty.
 
-## Następny milestone: M1 — First character scrape
-**Status:** 4/5 dni
+## 🎉 Milestone M1 — First character scrape COMPLETED (2026-04-22)
+Wszystkie 5 zadań ukończone, milestone zamknięty.
+
+## Następny milestone: M2 — _(TBD)_
 
 ### Ukończone (M0)
 - ✅ #1 [M0-D1] Inicjalizacja repo + GitHub + branch protection (2026-04-17) — PR [#9](https://github.com/bgozlinski/tibiantis-scraper/pull/9) — squash `d611e2a`
@@ -16,12 +18,13 @@ Wszystkie 3 zadania ukończone, milestone zamknięty.
 - ✅ #5 [M1-D5] Model `Character` + migracja + admin + test job w CI + pierwszy test (2026-04-18) — PR [#14](https://github.com/bgozlinski/tibiantis-scraper/pull/14) — squash `831344c`
 - ✅ #6 [M1-D6] Service layer: `upsert_character()` (2026-04-18) — PR [#16](https://github.com/bgozlinski/tibiantis-scraper/pull/16) — squash `04d1b88`
 - ✅ #7 [M1-D7] Scrapy: minimalny spider `character_spider` (2026-04-18) — PR [#18](https://github.com/bgozlinski/tibiantis-scraper/pull/18) — squash `114ff86`
+- ✅ #8 [M1-D8] Pipeline Scrapy → service + management command (2026-04-22) — PR [#25](https://github.com/bgozlinski/tibiantis-scraper/pull/25) — squash `75e516c`
 
 ### W trakcie
 _(pusto)_
 
 ### Następne (M1)
-- 🔜 #8 [M1-D8] Pipeline Scrapy → service + management command (**M1 done**)
+_(M1 zamknięty)_
 
 ### Notatki z retro M0
 - **#1 (merge 2026-04-17):** Issue #1 wymagał drobnego fixup commita — w pierwotnym commicie brakowało 8 wzorców z AC. Wniosek: warto przed push przeklikać AC checklist linia po linii.
@@ -49,8 +52,8 @@ _(pusto)_
   - Branch protection master: dodać required status check `test / Pytest` (obecnie tylko `lint`).
   - CLAUDE.md §12 pokazuje `[dependency-groups]` (PEP 735) jako pattern — w praktyce okazało się że Poetry 2.1.4 nie instaluje takich groups przez `--all-groups`. Teraz używamy `[tool.poetry.group.dev.dependencies]` (Poetry-native). CLAUDE.md wymaga update żeby odzwierciedlał rzeczywistość.
 - **Tech debt z #6 (do adresowania post-M1):**
-  - Brak docstringa na `upsert_character()` — funkcja self-explanatory, ale AC #6 sugerowało docstring (max 3 linie). Dopisać przy najbliższej okazji (np. razem z #7 jak spider zacznie wywoływać service).
-  - Race condition w `update_or_create`: dwa Celery workery scrapeujące tę samą postać równocześnie mogą trafić w `IntegrityError` na unique `name`. Do ogarnięcia w #8 (pipeline) — albo retry, albo `select_for_update` w transakcji, albo dedup po stronie schedulera.
+  - ~~Brak docstringa na `upsert_character()`~~ — rozwiązane w #8 (docstring opisuje kontrakt + race window).
+  - ~~Race condition w `update_or_create`~~ — rozwiązane w #8 (retry na `IntegrityError` w osobnym `transaction.atomic()` savepoincie).
 - **Tech debt z #7 (do adresowania post-M1):**
   - **Bug `self.name` vs `self.character_name` w `character_spider.py:30`** — log warning dla postaci "not found" pokazuje nazwę spidera (`"character"`), nie imię postaci. `Spider.name` to class-level attr Scrapy, instance var nazywa się `self.character_name`. Wyłapie test z log capture (follow-up).
   - **Bug `_parse_last_login` crashuje na "Never logged in"** — `rsplit(" ", 1)` na takim stringu da `("Never logged", "in")` i `strptime` rzuci `ValueError`. Potrzebny early return + fixtura edge case.
@@ -62,3 +65,10 @@ _(pusto)_
 ### Notatki z retro M1
 - **#6 (merge 2026-04-18):** PyCharm auto-import wrzucił `from IPython.core.magic_arguments import defaults` do `types.py` bo zmienna lokalna nazywała się `defaults`. Wniosek: po napisaniu service przelecieć wzrokiem top-of-file imports, PyCharm czasem halucynuje. Drugi wniosek: mieszanie `services.py` i `types.py` w jednym pliku (pierwotnie wszystko w `types.py`) złapane w review — zgodnie z CLAUDE.md §3 logika do `services.py`, typy osobno. Trzeci: funkcja deklarowała `-> Character` ale nie miała `return` — mypy strict by to złapał, ale warto przed pushem odpalić `poetry run mypy apps/` lokalnie zamiast liczyć na CI.
 - **#7 (merge 2026-04-18):** Spider parsuje fixture HTML poprawnie (6 testów green), wszystkie pola modelu pokryte. W retro-review wyszły 2 bugi niewyłapane przez testy (`self.name` w logu = nazwa spidera, nie postaci; `_parse_last_login` crashuje na "Never logged in") → follow-up PR dopisze fixturki edge-case i pokryje te ścieżki, bugi do naprawy w osobnym issue. **"Dependency conflicts" w PR title** sugeruje walkę z Poetry przy `poetry add scrapy` — warto spisać co się wydarzyło (bg: Scrapy pociąga Twisted + cryptography + lxml, potencjał kolizji z django-stubs). Świadoma deviation od AC: `scrapy.cfg` w root repo + prefiks `scrapers.` w importach → uprości #8 (brak `cd scrapers/`), ale w management command będzie `SCRAPY_SETTINGS_MODULE=scrapers.tibiantis_scrapers.settings` zamiast `tibiantis_scrapers.settings`.
+- **#8 (merge 2026-04-22):** Cztery AC, pięć commitów (`build(deps)`, AC1 pipeline, AC2 command, AC3 tests, AC4 race retry). Wyzwania:
+  - **Scrapy 2.x async pipelines** — `process_item` musi być `async def` i ORM-y owinąć `sync_to_async`; pierwsze podejście (sync) dało `SynchronousOnlyOperation` przy pierwszym scrapie.
+  - **Twisted reactor + crochet + Windows** — trzy gotchas w jednej linii: (1) `asyncioreactor.install()` MUSI być przed `from crochet import ...`, (2) na win32 `WindowsSelectorEventLoopPolicy` zamiast ProactorEventLoop (niekompatybilny z `asyncioreactor`), (3) w `scrapers/settings.py` trzeba dodać `django.setup()` żeby direct `scrapy crawl` też działał.
+  - **Pre-commit mypy w isolated env** — bez `scrapy`/`crochet`/`twisted` w `additional_dependencies` hook nie widział base classes → landed jako osobny PR #24 zgodnie z CLAUDE.md §12 (infrastruktura odseparowana od kodu funkcjonalnego).
+  - **AC4 race condition** — rozwiązanie: jeden retry w `except IntegrityError`, każda próba w swoim `transaction.atomic()` savepoint (bez tego aborted transaction po pierwszym `IntegrityError` blokuje retry). Sygnał z retro #6 zadziałał — był flagowany jako tech debt do #8.
+  - **Ops blunder — accidental duplicate PR #26:** po PR #25 (zmergowany) otworzyłem docs/close-m1-tracker z zamiarem aktualizacji PROGRESS.md, ale branch był utworzony OD feat/8 (nie od master) i nigdy nie dopisał się commit z PROGRESS.md. Pushed + zmergowany jako PR #26 = no-op squash `fe805eb` na master duplikujący treść PR #25. Wniosek: **zawsze twórz docs-close branch OD świeżego master po merge'u feature'a**, nie od feature-brancha. `git checkout master && git pull && git checkout -b docs/...` jako stały procedurę.
+  - **Wniosek:** Scrapy + Django + Celery-ready = 3 event loopy (Twisted, asyncio, Django sync). Kluczowe było trzymać integrację w jednym miejscu (management command + pipeline) i trzymać pipeline po stronie async.
