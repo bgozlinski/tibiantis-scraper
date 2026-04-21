@@ -36,6 +36,9 @@ repos:
           - django-stubs[compatible-mypy]
           - djangorestframework-stubs
           - strawberry-graphql
+          - scrapy
+          - crochet
+          - twisted
 
   # Django 6.0 — automatyczna modernizacja składni
   - repo: https://github.com/adamchainz/django-upgrade
