@@ -17,7 +17,7 @@ class CharacterSpider(scrapy.Spider):
         self.start_urls = [f"https://tibiantis.online/?page=character&name={name}"]
 
     def _parse_last_login(self, raw: str) -> datetime | None:
-        if not raw:
+        if not raw or "never" in raw.lower():
             return None
         naive_part, _tz = raw.rsplit(" ", 1)  # "CEST" / "CET"
         dt = datetime.strptime(naive_part, "%d %b %Y %H:%M:%S")
@@ -27,7 +27,7 @@ class CharacterSpider(scrapy.Spider):
         rows = response.css("table.tabi tr.hover")
 
         if not rows:
-            self.logger.warning(f"Character not found: {self.name}")
+            self.logger.warning(f"Character not found: {self.character_name}")
             return
 
         data = {}
