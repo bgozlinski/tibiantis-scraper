@@ -6,7 +6,8 @@ Wszystkie 3 zadania ukończone, milestone zamknięty.
 ## 🎉 Milestone M1 — First character scrape COMPLETED (2026-04-22)
 Wszystkie 5 zadań ukończone, milestone zamknięty.
 
-## Następny milestone: M2 — _(TBD)_
+## 🚀 Milestone M2 — Auth + GraphQL fundament IN PROGRESS (start 2026-04-22)
+Design spec: [`docs/superpowers/specs/2026-04-22-m2-auth-graphql-fundament-design.md`](docs/superpowers/specs/2026-04-22-m2-auth-graphql-fundament-design.md). Budżet 4 dni, 4 Issues (strict chain D9→D10→D11→D12).
 
 ### Ukończone (M0)
 - ✅ #1 [M0-D1] Inicjalizacja repo + GitHub + branch protection (2026-04-17) — PR [#9](https://github.com/bgozlinski/tibiantis-scraper/pull/9) — squash `d611e2a`
@@ -20,11 +21,16 @@ Wszystkie 5 zadań ukończone, milestone zamknięty.
 - ✅ #7 [M1-D7] Scrapy: minimalny spider `character_spider` (2026-04-18) — PR [#18](https://github.com/bgozlinski/tibiantis-scraper/pull/18) — squash `114ff86`
 - ✅ #8 [M1-D8] Pipeline Scrapy → service + management command (2026-04-22) — PR [#25](https://github.com/bgozlinski/tibiantis-scraper/pull/25) — squash `75e516c`
 
+### Ukończone (M2)
+- ✅ #28 [M2-D9] accounts app + custom User + AUTH_USER_MODEL (2026-04-22) — PR [#33](https://github.com/bgozlinski/tibiantis-scraper/pull/33) — squash `56961b3`
+
 ### W trakcie
 _(pusto)_
 
-### Następne (M1)
-_(M1 zamknięty)_
+### Następne (M2)
+- #29 [M2-D10] REST auth endpoints (register/login/refresh/logout) — `feat/29-rest-auth-jwt`, zależy od #28 ✅
+- #30 [M2-D11] Strawberry schema + `/graphql/` + `me` query — `feat/30-graphql-bootstrap`, zależy od #29
+- #31 [M2-D12] JWT w GraphQL + `character(name)` + e2e test — `feat/31-graphql-jwt-character`, zależy od #30
 
 ### Notatki z retro M0
 - **#1 (merge 2026-04-17):** Issue #1 wymagał drobnego fixup commita — w pierwotnym commicie brakowało 8 wzorców z AC. Wniosek: warto przed push przeklikać AC checklist linia po linii.
@@ -72,3 +78,9 @@ _(M1 zamknięty)_
   - **AC4 race condition** — rozwiązanie: jeden retry w `except IntegrityError`, każda próba w swoim `transaction.atomic()` savepoint (bez tego aborted transaction po pierwszym `IntegrityError` blokuje retry). Sygnał z retro #6 zadziałał — był flagowany jako tech debt do #8.
   - **Ops blunder — accidental duplicate PR #26:** po PR #25 (zmergowany) otworzyłem docs/close-m1-tracker z zamiarem aktualizacji PROGRESS.md, ale branch był utworzony OD feat/8 (nie od master) i nigdy nie dopisał się commit z PROGRESS.md. Pushed + zmergowany jako PR #26 = no-op squash `fe805eb` na master duplikujący treść PR #25. Wniosek: **zawsze twórz docs-close branch OD świeżego master po merge'u feature'a**, nie od feature-brancha. `git checkout master && git pull && git checkout -b docs/...` jako stały procedurę.
   - **Wniosek:** Scrapy + Django + Celery-ready = 3 event loopy (Twisted, asyncio, Django sync). Kluczowe było trzymać integrację w jednym miejscu (management command + pipeline) i trzymać pipeline po stronie async.
+
+### Notatki z retro M2
+- **#28 (merge 2026-04-22):** Implementacja minimalistyczna zgodnie ze spec §5/D9 — 5 linii `models.py`, 10 linii `admin.py`. R1 (kolejność migracji) zweryfikowane pre-flightem (żadnego FK na User jeszcze nie ma), R4 (`UserAdmin.add_fieldsets` vs password fields) zaadresowane przez spread `*(BaseUserAdmin.add_fieldsets or ())` który zachowuje `password1`/`password2` z base + doklejenie sekcji Discord. PR zmerge'owany bez code review (solo-repo paradox z retro M0 — self-approval zablokowany przez GitHub, mergujemy jako admin). Testy jednostkowe dopisywane follow-upem zgodnie z workflow.
+- **Tech debt z #28 (do adresowania post-M2):**
+  - **`db_index=True` + `unique=True` na `discord_id`** — redundant (Postgres `UNIQUE` tworzy btree automatycznie). Ten sam pattern co `Character.name` flagowany w retro M1 (#5 tech debt). Kandydat na chore PR razem z Character cleanup + regeneracja migracji.
+  - **Escaped markdown w body PR #33** (`\##`, `&#x20;`, `\\\`) — `gh pr create --body` na Windows zjada heredoc/quoting inaczej niż na Linux. Rozwiązanie na przyszłość: pisać body do pliku tymczasowego i używać `--body-file`, albo PR-y z UI GitHuba gdy treść ma markdown formatting.
