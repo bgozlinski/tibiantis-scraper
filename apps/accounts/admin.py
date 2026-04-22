@@ -4,7 +4,7 @@ from apps.accounts.models import User
 
 
 @admin.register(User)
-class UserAdmin(BaseUserAdmin[User]):
+class UserAdmin(BaseUserAdmin):
     fieldsets = (
         *(BaseUserAdmin.fieldsets or ()),
         ("Discord", {"fields": ("discord_id",)}),
