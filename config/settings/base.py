@@ -46,6 +46,7 @@ THIRD_PARTY_APPS: list[str] = []
 
 LOCAL_APPS: list[str] = [
     "apps.characters",
+    "apps.accounts",
 ]
 
 INSTALLED_APPS: list[str] = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -123,3 +124,5 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+AUTH_USER_MODEL = "accounts.User"
