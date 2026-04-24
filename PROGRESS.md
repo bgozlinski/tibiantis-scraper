@@ -23,13 +23,13 @@ Design spec: [`docs/superpowers/specs/2026-04-22-m2-auth-graphql-fundament-desig
 
 ### Ukończone (M2)
 - ✅ #28 [M2-D9] accounts app + custom User + AUTH_USER_MODEL (2026-04-22) — PR [#33](https://github.com/bgozlinski/tibiantis-scraper/pull/33) — squash `56961b3`
+- ✅ #29 [M2-D10] REST auth endpoints (register/login/refresh/logout) (2026-04-24) — PR [#35](https://github.com/bgozlinski/tibiantis-scraper/pull/35) — squash `af582d5`; follow-up testy PR [#36](https://github.com/bgozlinski/tibiantis-scraper/pull/36) — squash `7abfb5f`
 
 ### W trakcie
 _(pusto)_
 
 ### Następne (M2)
-- #29 [M2-D10] REST auth endpoints (register/login/refresh/logout) — `feat/29-rest-auth-jwt`, zależy od #28 ✅
-- #30 [M2-D11] Strawberry schema + `/graphql/` + `me` query — `feat/30-graphql-bootstrap`, zależy od #29
+- #30 [M2-D11] Strawberry schema + `/graphql/` + `me` query — `feat/30-graphql-bootstrap`, zależy od #29 ✅
 - #31 [M2-D12] JWT w GraphQL + `character(name)` + e2e test — `feat/31-graphql-jwt-character`, zależy od #30
 
 ### Notatki z retro M0
@@ -84,3 +84,14 @@ _(pusto)_
 - **Tech debt z #28 (do adresowania post-M2):**
   - **`db_index=True` + `unique=True` na `discord_id`** — redundant (Postgres `UNIQUE` tworzy btree automatycznie). Ten sam pattern co `Character.name` flagowany w retro M1 (#5 tech debt). Kandydat na chore PR razem z Character cleanup + regeneracja migracji.
   - **Escaped markdown w body PR #33** (`\##`, `&#x20;`, `\\\`) — `gh pr create --body` na Windows zjada heredoc/quoting inaczej niż na Linux. Rozwiązanie na przyszłość: pisać body do pliku tymczasowego i używać `--body-file`, albo PR-y z UI GitHuba gdy treść ma markdown formatting.
+- **#29 (merge 2026-04-24):** REST auth (DRF + simplejwt) + 9 testów endpointów jako follow-up PR #36. Cztery rundy review serializera zanim wszedł na branch — klasyczne pułapki DRF złapane w review, nie w runtime:
+  - `serializers.Serializer` + `Meta.model/fields` — `Meta` ignorowane w `Serializer` (działa tylko w `ModelSerializer`), wybór klasy bazowej to świadoma decyzja.
+  - `write_only_fields` w `Meta` nie istnieje (cicho zignorowane) — prawidłowy mechanizm to `extra_kwargs = {"password": {"write_only": True}}`.
+  - `validate_<field>` bez `return value` → `None` trafia do `validated_data`, `create_user(password=None)` robi `set_unusable_password()`. **Classic gotcha DRF.**
+  - `django.contrib.auth.password_validation.validate_password` rzuca `django.core.exceptions.ValidationError` — trzeba przepakować na `rest_framework.serializers.ValidationError`, inaczej DRF zwróci 500.
+  - Shadowing importu `validate_password` przez metodę o tej samej nazwie — technicznie działa, ale czytelność zero. Alias import.
+  - Views: `rest_framework.authtoken` to **inny system** niż simplejwt (DRF Token auth, nie JWT) — łatwo pomylić przy pierwszym kontakcie. Re-export z simplejwt jest minimalny (3 linie), custom subclassy nie są potrzebne.
+  - **`IntegrityError` przy migracji `email unique=True`** — istniejący superuser miał `email=''`, Postgres traktuje `''` jako wartość (nie `NULL`), więc unique constraint widzi duplikaty. Fix dev: `User.objects.filter(email='').delete()` + migrate. Production pattern: osobna data-migration z backfill **przed** schema-migration z constraint. Zapamiętać.
+  - **Dryft schema:** `makemigrations` wygenerowało niepowiązaną migrację `apps/characters/0002_remove_character_characters__name_6d8b81_idx` (tech debt z retro M1 #5 — redundant index był nadal w `0001_initial` ale nie w modelu). Świadomie **nie weszła do PR #35** — osobny fix PR w planach.
+  - **Windows CRLF vs LF:** `mixed-line-ending` hook failuje na każdym edycie w Windows, ale auto-fixuje. `git add -u` po hookach wystarczy. Gdyby ktoś commitował z Linuksa po mnie, CI byłby zielony od pierwszego strzału.
+  - **Mypy strict na DRF:** `ModelSerializer[User]`, `CreateAPIView[User]`, `validated_data: dict[str, Any]` — `djangorestframework-stubs` daje generics, warto parametryzować od razu, inaczej pre-commit `mypy` blokuje commit (`no-untyped-def`, `type-arg`).
