@@ -46,6 +46,7 @@ DJANGO_APPS: list[str] = [
 THIRD_PARTY_APPS: list[str] = [
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
+    "strawberry_django",
 ]
 
 LOCAL_APPS: list[str] = [
