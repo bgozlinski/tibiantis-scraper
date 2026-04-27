@@ -17,13 +17,11 @@ class JWTAsyncGraphQLView(AsyncGraphQLView):
             auth_result: tuple[Any, Any] | None = await sync_to_async(
                 _authenticator.authenticate  # type: ignore[arg-type]
             )(DRFRequest(request))
+        except AuthenticationFailed:
+            request.user = AnonymousUser()
+        else:
             if auth_result is not None:
                 user, _ = auth_result
                 request.user = user
-            else:
-                request.user = AnonymousUser()
-
-        except AuthenticationFailed:
-            request.user = AnonymousUser()
 
         return await super().dispatch(request, *args, **kwargs)
