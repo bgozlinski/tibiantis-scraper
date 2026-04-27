@@ -24,13 +24,13 @@ Design spec: [`docs/superpowers/specs/2026-04-22-m2-auth-graphql-fundament-desig
 ### Ukończone (M2)
 - ✅ #28 [M2-D9] accounts app + custom User + AUTH_USER_MODEL (2026-04-22) — PR [#33](https://github.com/bgozlinski/tibiantis-scraper/pull/33) — squash `56961b3`
 - ✅ #29 [M2-D10] REST auth endpoints (register/login/refresh/logout) (2026-04-24) — PR [#35](https://github.com/bgozlinski/tibiantis-scraper/pull/35) — squash `af582d5`; follow-up testy PR [#36](https://github.com/bgozlinski/tibiantis-scraper/pull/36) — squash `7abfb5f`
+- ✅ #30 [M2-D11] Strawberry schema + `/graphql/` + `me` query (2026-04-24) — PR [#40](https://github.com/bgozlinski/tibiantis-scraper/pull/40) — squash `0e3067e`; follow-up testy PR [#41](https://github.com/bgozlinski/tibiantis-scraper/pull/41) — squash `7e7793b`
 
 ### W trakcie
 _(pusto)_
 
 ### Następne (M2)
-- #30 [M2-D11] Strawberry schema + `/graphql/` + `me` query — `feat/30-graphql-bootstrap`, zależy od #29 ✅
-- #31 [M2-D12] JWT w GraphQL + `character(name)` + e2e test — `feat/31-graphql-jwt-character`, zależy od #30
+- #31 [M2-D12] JWT w GraphQL + `character(name)` + e2e test — `feat/31-graphql-jwt-character`, zależy od #30 ✅
 
 ### Notatki z retro M0
 - **#1 (merge 2026-04-17):** Issue #1 wymagał drobnego fixup commita — w pierwotnym commicie brakowało 8 wzorców z AC. Wniosek: warto przed push przeklikać AC checklist linia po linii.
