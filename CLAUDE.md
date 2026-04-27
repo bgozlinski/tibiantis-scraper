@@ -662,6 +662,7 @@ docker compose exec web python manage.py migrate
     - Hooki `poetry-check`/`poetry-lock` muszą być z rev Poetry **2.x** (1.8.x nie rozumie `[project]`).
     - Flag `--no-update` przy `poetry lock` deprecated w 2.x — nie dodawaj go.
     - Zależności w `[project.dependencies]` dalej parsuje Poetry, więc tam `^` działa (Poetry sam przekłada na `>=X,<Y`).
+    - **Dev dependencies przez `[tool.poetry.group.dev.dependencies]`** (Poetry-native), **nie** `[dependency-groups]` (PEP 735). Powód: Poetry 2.0/2.1 nie instaluje PEP 735 groups przez `--with dev` ani `--all-groups` — sprawdzone empirycznie (retro M0 #3 i M1 #5, łącznie 11 commitów fixów CI zanim trafiło). PEP 735 jest standardem Pythona, ale w Poetry **nie jest jeszcze battle-tested** — dla CI-heavy projektów używaj Poetry-native groups. Cheatsheet §14 pokazuje właściwe `poetry add --group dev <package>`.
 
 ---
 
