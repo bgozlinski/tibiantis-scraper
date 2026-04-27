@@ -6,8 +6,8 @@ Wszystkie 3 zadania ukończone, milestone zamknięty.
 ## 🎉 Milestone M1 — First character scrape COMPLETED (2026-04-22)
 Wszystkie 5 zadań ukończone, milestone zamknięty.
 
-## 🚀 Milestone M2 — Auth + GraphQL fundament IN PROGRESS (start 2026-04-22)
-Design spec: [`docs/superpowers/specs/2026-04-22-m2-auth-graphql-fundament-design.md`](docs/superpowers/specs/2026-04-22-m2-auth-graphql-fundament-design.md). Budżet 4 dni, 4 Issues (strict chain D9→D10→D11→D12).
+## 🎉 Milestone M2 — Auth + GraphQL fundament COMPLETED (2026-04-27)
+Wszystkie 4 zadania ukończone, milestone zamknięty. Design spec: [`docs/superpowers/specs/2026-04-22-m2-auth-graphql-fundament-design.md`](docs/superpowers/specs/2026-04-22-m2-auth-graphql-fundament-design.md).
 
 ### Ukończone (M0)
 - ✅ #1 [M0-D1] Inicjalizacja repo + GitHub + branch protection (2026-04-17) — PR [#9](https://github.com/bgozlinski/tibiantis-scraper/pull/9) — squash `d611e2a`
@@ -25,12 +25,7 @@ Design spec: [`docs/superpowers/specs/2026-04-22-m2-auth-graphql-fundament-desig
 - ✅ #28 [M2-D9] accounts app + custom User + AUTH_USER_MODEL (2026-04-22) — PR [#33](https://github.com/bgozlinski/tibiantis-scraper/pull/33) — squash `56961b3`
 - ✅ #29 [M2-D10] REST auth endpoints (register/login/refresh/logout) (2026-04-24) — PR [#35](https://github.com/bgozlinski/tibiantis-scraper/pull/35) — squash `af582d5`; follow-up testy PR [#36](https://github.com/bgozlinski/tibiantis-scraper/pull/36) — squash `7abfb5f`
 - ✅ #30 [M2-D11] Strawberry schema + `/graphql/` + `me` query (2026-04-24) — PR [#40](https://github.com/bgozlinski/tibiantis-scraper/pull/40) — squash `0e3067e`; follow-up testy PR [#41](https://github.com/bgozlinski/tibiantis-scraper/pull/41) — squash `7e7793b`
-
-### W trakcie
-_(pusto)_
-
-### Następne (M2)
-- #31 [M2-D12] JWT w GraphQL + `character(name)` + e2e test — `feat/31-graphql-jwt-character`, zależy od #30 ✅
+- ✅ #31 [M2-D12] JWT w GraphQL + `character(name)` + e2e test (2026-04-27) — PR [#43](https://github.com/bgozlinski/tibiantis-scraper/pull/43) — squash `1371e20`; follow-up testy PR [#44](https://github.com/bgozlinski/tibiantis-scraper/pull/44) — squash `2e3d170`
 
 ### Notatki z retro M0
 - **#1 (merge 2026-04-17):** Issue #1 wymagał drobnego fixup commita — w pierwotnym commicie brakowało 8 wzorców z AC. Wniosek: warto przed push przeklikać AC checklist linia po linii.
@@ -95,3 +90,24 @@ _(pusto)_
   - **Dryft schema:** `makemigrations` wygenerowało niepowiązaną migrację `apps/characters/0002_remove_character_characters__name_6d8b81_idx` (tech debt z retro M1 #5 — redundant index był nadal w `0001_initial` ale nie w modelu). Świadomie **nie weszła do PR #35** — osobny fix PR w planach.
   - **Windows CRLF vs LF:** `mixed-line-ending` hook failuje na każdym edycie w Windows, ale auto-fixuje. `git add -u` po hookach wystarczy. Gdyby ktoś commitował z Linuksa po mnie, CI byłby zielony od pierwszego strzału.
   - **Mypy strict na DRF:** `ModelSerializer[User]`, `CreateAPIView[User]`, `validated_data: dict[str, Any]` — `djangorestframework-stubs` daje generics, warto parametryzować od razu, inaczej pre-commit `mypy` blokuje commit (`no-untyped-def`, `type-arg`).
+- **#30 (merge 2026-04-24):** R5 pre-flight (`poetry add strawberry-graphql-django --dry-run` na Django 6) zwrócił OK — bez planu B. Implementacja: `apps/accounts/schema.py` (UserType + `me` z `sync_to_async` dla `request.user` LazyObject). Follow-up testowy PR [#41](https://github.com/bgozlinski/tibiantis-scraper/pull/41) — split per concern: `test_graphql_me.py` (introspection + me sync) + `test_graphql_async_canary.py` (jeden test pełnego async flow). Decyzja split okazała się **kluczowa w D12** — async canary natychmiast złapał regresję `request.user = AnonymousUser()` w nowym JWT dispatch (intent w nazwie pliku ułatwił post-mortem). Wniosek: testy z explicit "canary" intent trzymać osobno, nie zlewać w jeden test_graphql.py.
+- **#31 (merge 2026-04-27):** Trzy iteracje code review zanim mypy strict zielony — Strawberry + DRF + simplejwt mają nakładające się gotcha:
+  - **`JWTAuthentication.authenticate()` wymaga `rest_framework.request.Request`**, nie `django.http.HttpRequest`. Runtime działa przez duck-typing (auth czyta tylko `request.META`), ale mypy + DRF stubs łapią rozbieżność. Fix: `DRFRequest(request)` **lokalnie** dla auth call. Do `super().dispatch()` idzie oryginalny Django request — Strawberry oczekuje `HttpRequest`, nie DRFRequest.
+  - **`# type: ignore[override]` na `dispatch`** — Django stuby twierdzą `View.dispatch` jest sync, Strawberry override'uje na async. Strawberry sam ma `# pyright: ignore` w źródle. Niezgodność stubów, nie bug — utrwalone w ekosystemie.
+  - **`# type: ignore[arg-type]` na `sync_to_async(_authenticator.authenticate)`** — generic `AuthUser` TypeVar w stubach DRF nie przekłada się przez `sync_to_async` wrapper (mypy degraduje TypeVar do `Never`). Znana limitation type inference dla generic Callable, runtime bezbłędne.
+  - **`afirst()` bez `await`** — async ORM zwraca coroutine, bez `await` zwracasz `<coroutine>` zamiast `Character | None`. Mypy nie złapie (signature pasuje formalnie do `Awaitable[T | None]`), ale Strawberry serializer rzuci runtime error. **Smoke `curl` + manual eyeballing pierwszego review pozwolił złapać przed CI.**
+  - **`request.user = AnonymousUser()` w `else`** wybuchło w testach #41 (async canary celowo dla tego scenario). Bug: dispatch zawsze nadpisywał `request.user`, kasował to co session middleware (lub `force_login`) ustawił. Skutek prod: zalogowany przez session admin tracił auth na `/graphql/`. Fix: nadpisuj **tylko** w `except AuthenticationFailed` (explicit zły token = explicit anonymous); brak headera = no-op.
+  - **`merge_types(...)` z Strawberry tools** zamiast multiple inheritance — flat merge pól, hard fail przy konflikcie nazw przy starcie schemy. Dziedziczenie cicho rozwiązuje przez MRO = anti-pattern dla GraphQL.
+  - **Pierwszy plik w `tests/integration/`** (CLAUDE.md §3 + spec D12 §7 — "integration e2e tylko w D12"). Założono katalog z `__init__.py`. Test e2e używa **dwóch klientów**: `APIClient` (sync DRF) dla `/api/auth/*` i `AsyncClient` (async Django) dla `/graphql/`. Mieszanka jest konieczna — sync REST view zawinięty w AsyncClient zamaskowałby SynchronousOnlyOperation, na odwrót Strawberry AsyncGraphQLView wymaga async clienta.
+
+### Podsumowanie M2 (2026-04-22 → 2026-04-27, 5 dni vs 4 z budżetu)
+- 4 Issues (#28-#31) + 4 follow-up testowe (#36, #41, #44) + 4 docs PR (#34, #37, #42, ten) + 1 fix PR (#39 schema drift z M1 #5 tech debt). Total 12 PR.
+- **Strict chain D9→D10→D11→D12 zachowany** — żadnego paralelizmu, każdy issue po pełnym merge poprzedniego.
+- **DoD M2 spełnione:** REST auth (register/login/refresh/logout) działa, JWT autentykuje `/graphql/`, mixed query `{ me + character(name) }` zwraca dane. E2E test pokrywa cały flow.
+- **Co przeniesione na post-M2 jako tech debt:**
+  - Redundant index na `Character.name` (`unique=True` + `db_index=True` przez Meta.indexes) — z retro M1 #5, nadal otwarte.
+  - Redundant `db_index=True + unique=True` na `User.discord_id` — z retro M2 #28.
+  - `coverage threshold = 0` — z retro M1 #5/Pułapka F. Cel: 70%+ na `apps/`.
+  - `dev.py` hardcoduje `DEBUG=True` + `ALLOWED_HOSTS=['*']`, override'uje `.env` — czy to świadome?
+  - `django-upgrade` target pinowany na `5.1` (max który `1.22.1` zna). Sprawdzić przy `pre-commit autoupdate`.
+- **Najwartościowsza lekcja M2:** **mini-retro w trakcie milestone** (po 3/4 issuesach) zadziałała — drift schema check przed #31 oszczędził minimum jedną rundę naprawy. Zachować jako pattern dla M3.
