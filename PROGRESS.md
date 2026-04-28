@@ -128,10 +128,10 @@ Wszystkie 4 zadania ukończone, milestone zamknięty. Design spec: [`docs/superp
 
 ### Ukończone (M3)
 - ✅ [#58](https://github.com/bgozlinski/tibiantis-scraper/issues/58) [M3-D13] docker-compose.dev.yml + Celery deps + django-celery-beat (2026-04-28) — PR [#64](https://github.com/bgozlinski/tibiantis-scraper/pull/64) — squash `9838696`
-- ✅ [#59](https://github.com/bgozlinski/tibiantis-scraper/issues/59) [M3-D14] Celery app config + ping task (2026-04-28) — PR [#68](https://github.com/bgozlinski/tibiantis-scraper/pull/68) — squash `14ddb76`; deps via PR [#66](https://github.com/bgozlinski/tibiantis-scraper/pull/66) (mypy additional_dependencies) + PR [#67](https://github.com/bgozlinski/tibiantis-scraper/pull/67) (mypy module overrides)
+- ✅ [#59](https://github.com/bgozlinski/tibiantis-scraper/issues/59) [M3-D14] Celery app config + ping task (2026-04-28) — PR [#68](https://github.com/bgozlinski/tibiantis-scraper/pull/68) — squash `14ddb76`; deps via PR [#66](https://github.com/bgozlinski/tibiantis-scraper/pull/66) (mypy additional_dependencies) + PR [#67](https://github.com/bgozlinski/tibiantis-scraper/pull/67) (mypy module overrides); follow-up testy PR [#70](https://github.com/bgozlinski/tibiantis-scraper/pull/70) — squash `72770df`
+- ✅ [#60](https://github.com/bgozlinski/tibiantis-scraper/issues/60) [M3-D15] Worker + Beat dev runners + DatabaseScheduler default (2026-04-28) — PR [#71](https://github.com/bgozlinski/tibiantis-scraper/pull/71) — squash `ba4cd35`
 
 ### Otwarte (M3)
-- ⏳ [#60](https://github.com/bgozlinski/tibiantis-scraper/issues/60) [M3-D15] Worker + Beat dev runners + DatabaseScheduler default (~2-3h, zależy od #59)
 - ⏳ [#61](https://github.com/bgozlinski/tibiantis-scraper/issues/61) [M3-D16] `scrape_watched_characters` task + Beat schedule (~4h, zależy od #60)
 - ⏳ [#62](https://github.com/bgozlinski/tibiantis-scraper/issues/62) [M3-D17] Celery e2e test + unit tests + M3 closure (~3-4h, zależy od #61)
 
@@ -159,6 +159,9 @@ Wszystkie 4 zadania ukończone, milestone zamknięty. Design spec: [`docs/superp
   Sanity przed pushem: `poetry run pre-commit run --all-files` ZIELONY + `git grep -l "env(" config/settings/` vs `grep "env_var:" .github/workflows/ci.yml` ręczna kontrola.
 - **#59 deviation od spec'a:** żadna — wszystkie trzy AC fix'y (settings.dev zamiast base, `Celery("tibiantis")` zamiast "config", drop `debug_task`) zaaplikowane po review. Spec D14 §AC był niezmieniony.
 - **#59 ops:** `Closes #59` w PR body zadziałało — Issue auto-closed at merge. Lekcja z #58 ops zaaplikowana skutecznie.
+- **#60 (merge 2026-04-28):** Najczystszy issue M3 — 1 linia config (`CELERY_BEAT_SCHEDULER`) + sekcja README "Running Celery dev" z 3-terminalowym smoke (worker `-P solo`, beat, runserver). Zero satellite chore PR-ów, zero dramatów (kontrast z #59 wymagającym #66 + #67 + fix-up CI). Smoke przeszedł od pierwszego strzału — beat wystartował z `Scheduler: django_celery_beat.schedulers.DatabaseScheduler` od razu (settings podchwycone), worker wykrył `apps.characters.tasks.ping` przez autodiscover.
+- **#60 lekcja:** stricte docs/config issues idą szybko po dramach z infra (#58) i mypy/Celery typing (#59). M3 budżet 5 dni — po 3 issues mamy ~6-8h work, na harmonogramie lub lekko wyprzedzeniu. Pozostają #61 (D16, infra-heavy: subprocess Twisted, freshness threshold, data migration) i #62 (testy + closure).
+- **#60 ops:** `Closes #60` w PR body zadziałało — Issue auto-closed.
 
 ### Zasady przeniesione z retro M0-M2 (do egzekwowania w M3)
 - **Pattern z M2:** mini-retro po 3/4 Issues (po #61 a przed #62) — drift schema check / coverage check zanim wjedziemy w testy + closure.
