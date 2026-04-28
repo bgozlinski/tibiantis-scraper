@@ -48,6 +48,8 @@ A locally installed Postgres on 5432 and other Docker projects on 5433–5434 ca
 
 ### Resetting Postgres credentials
 
+
+
 The Postgres image runs `initdb` **only on the first start against an empty volume**. If you later change `POSTGRES_USER`, `POSTGRES_PASSWORD`, or `POSTGRES_DB` in `.env`, the new values are silently ignored — the container keeps using the credentials baked in on first init. To pick up the new values, wipe the volume and recreate:
 
 ```bash
@@ -56,6 +58,36 @@ docker compose -f docker-compose.dev.yml up -d
 ```
 
 `-v` drops the named volume, triggering a fresh `initdb` with the current env vars. Destructive — only safe in dev, where seed data is regenerable.
+
+### Running Celery dev
+
+Worker + beat as separate processes. On Windows the worker pool **must** be `solo` (Win32 lacks `fork()`):
+
+```bash
+# Terminal 1: worker
+poetry run celery -A config worker -l info -P solo
+
+# Terminal 2: beat (scheduler)
+poetry run celery -A config beat -l info
+
+# Terminal 3 (optional): Django runserver
+poetry run python manage.py runserver
+```
+
+The worker logs `[tasks] . apps.characters.tasks.ping` once `autodiscover_tasks` finds the task. Beat logs
+`Scheduler: ... DatabaseScheduler` and reads `PeriodicTask` rows from the database.
+
+#### Adding/changing scheduled tasks
+
+`PeriodicTask`/`IntervalSchedule`/`CrontabSchedule` rows are managed via Django admin
+(`/admin/django_celery_beat/`). Beat polls the DB every 5 seconds (`CELERY_BEAT_MAX_LOOP_INTERVAL`), so admin
+changes propagate without restart.
+
+#### Why `-P solo` on Windows
+
+Default Celery worker pool is `prefork` — relies on `os.fork()`, missing on Win32. Using `prefork` raises
+`PermissionError: [WinError 5] Access is denied`. `-P solo` runs the worker single-threaded in the main
+process. Linux Docker prod (M9) will use prefork.
 
 ## Documentation
 
