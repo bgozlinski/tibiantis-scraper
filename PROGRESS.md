@@ -44,20 +44,20 @@ Wszystkie 4 zadania ukończone, milestone zamknięty. Design spec: [`docs/superp
 - ~~`CharactersConfig` ma redundantny `default_auto_field`~~ — rozwiązane w #5.
 - ~~`INSTALLED_APPS` 2-way split~~ — rozwiązane w #5 (3-way z `DJANGO_APPS`/`THIRD_PARTY_APPS`/`LOCAL_APPS`).
 - ~~Test job w CI~~ — rozwiązane w #5 (Postgres 16 service + pytest + coverage).
-- `dev.py` hardcoduje `DEBUG = True` i `ALLOWED_HOSTS = ['*']`, override'ując wartości z env. Do przemyślenia czy `DJANGO_DEBUG`/`DJANGO_ALLOWED_HOSTS` z `.env.example` mają sens dla dev.
-- `django-upgrade` target pinowany na `5.1` (maks. który narzędzie zna w rev `1.22.1`). Przy `pre-commit autoupdate` w przyszłości sprawdzić czy nowa rev wspiera `6.0`.
+- ~~`dev.py` hardcoduje `DEBUG = True` i `ALLOWED_HOSTS = ['*']`, override'ując wartości z env~~ — rozwiązane w #49 (PR #53), `env.bool()` + `env.list()` z defaultami.
+- ~~`django-upgrade` target pinowany na `5.1` (maks. który narzędzie zna w rev `1.22.1`)~~ — rozwiązane w PR #46 (rev `1.30.0`, target Django `6.0`).
 - **Tech debt z #5 (do adresowania post-M1):**
-  - `Meta.indexes = [models.Index(fields=["name"])]` — redundant z `unique=True` na `name` (już tworzy unique btree). Usunąć w chore PR, zregenerować migrację.
+  - ~~`Meta.indexes = [models.Index(fields=["name"])]` — redundant z `unique=True` na `name` (już tworzy unique btree)~~ — rozwiązane w #38 (PR #39, schema drift wykryty przy #29).
   - `admin.ModelAdmin` bez generic parameter (`# type: ignore[type-arg]` zamiast `ModelAdmin[Character]`). Alternatywa — `django-stubs-ext.monkeypatch()` w `base.py`. Decyzja na później.
-  - `coverage threshold = 0` — AC #5 Pułapka F mówi podnosić do 70 w osobnym PR post-M1. Kandydat na Issue #9.
+  - ~~`coverage threshold = 0` — AC #5 Pułapka F mówi podnosić do 70 w osobnym PR post-M1~~ — rozwiązane w #50 (PR #51), próg podniesiony do 70%.
   - Branch protection master: dodać required status check `test / Pytest` (obecnie tylko `lint`).
-  - CLAUDE.md §12 pokazuje `[dependency-groups]` (PEP 735) jako pattern — w praktyce okazało się że Poetry 2.1.4 nie instaluje takich groups przez `--all-groups`. Teraz używamy `[tool.poetry.group.dev.dependencies]` (Poetry-native). CLAUDE.md wymaga update żeby odzwierciedlał rzeczywistość.
+  - ~~CLAUDE.md §12 pokazuje `[dependency-groups]` (PEP 735) jako pattern — w praktyce okazało się że Poetry 2.1.4 nie instaluje takich groups przez `--all-groups`~~ — rozwiązane w PR #47 (CLAUDE.md §15.16 explicit ostrzeżenie).
 - **Tech debt z #6 (do adresowania post-M1):**
   - ~~Brak docstringa na `upsert_character()`~~ — rozwiązane w #8 (docstring opisuje kontrakt + race window).
   - ~~Race condition w `update_or_create`~~ — rozwiązane w #8 (retry na `IntegrityError` w osobnym `transaction.atomic()` savepoincie).
 - **Tech debt z #7 (do adresowania post-M1):**
-  - **Bug `self.name` vs `self.character_name` w `character_spider.py:30`** — log warning dla postaci "not found" pokazuje nazwę spidera (`"character"`), nie imię postaci. `Spider.name` to class-level attr Scrapy, instance var nazywa się `self.character_name`. Wyłapie test z log capture (follow-up).
-  - **Bug `_parse_last_login` crashuje na "Never logged in"** — `rsplit(" ", 1)` na takim stringu da `("Never logged", "in")` i `strptime` rzuci `ValueError`. Potrzebny early return + fixtura edge case.
+  - ~~**Bug `self.name` vs `self.character_name` w `character_spider.py:30`** — log warning dla postaci "not found" pokazuje nazwę spidera (`"character"`), nie imię postaci~~ — rozwiązane w #21 (PR #22) z parametrized regression guards.
+  - ~~**Bug `_parse_last_login` crashuje na "Never logged in"** — `rsplit(" ", 1)` na takim stringu da `("Never logged", "in")` i `strptime` rzuci `ValueError`~~ — rozwiązane w #21 (PR #22), early return + fixtury edge case.
   - **Brak defensywnego parsowania `level`** — `int(level_raw)` pada gdy layout strony się zmieni lub pojawi się np. `"118 (deleted)"`. Rozważyć regex `^\d+` albo try/except.
   - **`_parse_last_login` hardcoduje `Europe/Berlin`** zamiast walidować odczytaną TZ (`_tz` jest odrzucona). Nit, ale gdyby serwer kiedyś wysłał inny TZ, cichy bug. Minimum: assert `_tz in {"CEST","CET"}` albo warning.
   - **Fragile fixture path `parents[3]`** w `tests/unit/scrapers/test_character_spider.py` — przy przeniesieniu katalogu cicho zwróci złą ścieżkę. Refactor do `conftest.py` w `tests/`.
@@ -104,10 +104,17 @@ Wszystkie 4 zadania ukończone, milestone zamknięty. Design spec: [`docs/superp
 - 4 Issues (#28-#31) + 4 follow-up testowe (#36, #41, #44) + 4 docs PR (#34, #37, #42, ten) + 1 fix PR (#39 schema drift z M1 #5 tech debt). Total 12 PR.
 - **Strict chain D9→D10→D11→D12 zachowany** — żadnego paralelizmu, każdy issue po pełnym merge poprzedniego.
 - **DoD M2 spełnione:** REST auth (register/login/refresh/logout) działa, JWT autentykuje `/graphql/`, mixed query `{ me + character(name) }` zwraca dane. E2E test pokrywa cały flow.
-- **Co przeniesione na post-M2 jako tech debt:**
-  - Redundant index na `Character.name` (`unique=True` + `db_index=True` przez Meta.indexes) — z retro M1 #5, nadal otwarte.
-  - Redundant `db_index=True + unique=True` na `User.discord_id` — z retro M2 #28.
-  - `coverage threshold = 0` — z retro M1 #5/Pułapka F. Cel: 70%+ na `apps/`.
-  - `dev.py` hardcoduje `DEBUG=True` + `ALLOWED_HOSTS=['*']`, override'uje `.env` — czy to świadome?
-  - `django-upgrade` target pinowany na `5.1` (max który `1.22.1` zna). Sprawdzić przy `pre-commit autoupdate`.
+- **Co przeniesione na post-M2 jako tech debt — wszystkie zamknięte w ciągu 24h po M2-closure (sweep chore PR-ów #46/#47/#51/#52/#53):**
+  - ~~Redundant index na `Character.name` (`unique=True` + `db_index=True` przez Meta.indexes)~~ — rozwiązane w #38 (PR #39, w trakcie M2).
+  - ~~Redundant `db_index=True + unique=True` na `User.discord_id`~~ — rozwiązane w #48 (PR #52).
+  - ~~`coverage threshold = 0`~~ — rozwiązane w #50 (PR #51), próg podniesiony do 70%.
+  - ~~`dev.py` hardcoduje `DEBUG=True` + `ALLOWED_HOSTS=['*']`~~ — rozwiązane w #49 (PR #53).
+  - ~~`django-upgrade` target pinowany na `5.1`~~ — rozwiązane w PR #46 (rev `1.30.0`, target Django `6.0`).
+- **Realny tech debt otwarty po M2 (do adresowania w M3 lub osobnych chore):**
+  - `admin.ModelAdmin` bez generic parameter — z retro M1 #5; alternatywa `django-stubs-ext.monkeypatch()` w `base.py`. Decyzja na później.
+  - Branch protection `master` nie ma required status check `test / Pytest` (tylko `lint`). Dodać w GitHub Settings → Branches.
+  - Spider defensive parsing (z retro #7, częściowo niezamknięte przez #21):
+    - `int(level_raw)` w `character_spider.py:49` — pada na np. `"118 (deleted)"`; potrzebny regex `^\d+` lub try/except.
+    - `_parse_last_login` hardcoduje `Europe/Berlin` zamiast walidować odczytaną TZ (`_tz` jest odrzucony) — cichy bug gdyby serwer kiedyś zmienił TZ. Minimum: assert `_tz in {"CEST","CET"}` albo warning.
+    - Fragile fixture path `Path(__file__).resolve().parents[3]` w `test_character_spider.py:15` — przy reorg katalogów cicho zwróci złą ścieżkę. Refactor do `conftest.py` w `tests/`.
 - **Najwartościowsza lekcja M2:** **mini-retro w trakcie milestone** (po 3/4 issuesach) zadziałała — drift schema check przed #31 oszczędził minimum jedną rundę naprawy. Zachować jako pattern dla M3.
