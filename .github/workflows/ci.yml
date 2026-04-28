@@ -71,7 +71,7 @@ jobs:
       - name: Migrate
         run: poetry run python manage.py migrate --noinput
       - name: Run tests
-        run: poetry run pytest --cov=apps --cov-report=xml --cov-fail-under=0
+        run: poetry run pytest --cov=apps --cov-report=xml --cov-fail-under=70
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
