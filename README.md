@@ -15,6 +15,48 @@ The application is modular — more features are planned, so the architecture mu
 
 Python 3.13 · Django 6 · PostgreSQL · MongoDB (logs only) · Scrapy · Celery + Redis · Strawberry-Django (GraphQL) · DRF (auth only) · discord.py · Docker.
 
+## Local development
+
+The dev environment uses `docker-compose.dev.yml` with two services: **postgres** (16-alpine, host port **5435** → container 5432) and **redis** (7-alpine, port 6379, ephemeral — no persistent volume).
+
+### Prerequisites
+
+- Docker Desktop (Windows/Mac) or Docker Engine (Linux)
+- Python 3.13 and Poetry 2.x
+
+### Commands
+
+```bash
+docker compose -f docker-compose.dev.yml up -d      # start in the background
+docker compose -f docker-compose.dev.yml ps         # status — both services should be `(healthy)`
+docker compose -f docker-compose.dev.yml logs -f    # follow logs from both services
+docker compose -f docker-compose.dev.yml down       # stop (named volumes preserved)
+docker compose -f docker-compose.dev.yml down -v    # stop + wipe Postgres volume (re-init from POSTGRES_* env)
+```
+
+Once the containers report `(healthy)`, install dependencies, apply migrations, and start Django:
+
+```bash
+poetry install
+poetry run python manage.py migrate
+poetry run python manage.py runserver
+```
+
+### Why port 5435 (not 5432)
+
+A locally installed Postgres on 5432 and other Docker projects on 5433–5434 can run alongside this stack without conflict. The container still listens on 5432 internally; only the host-side mapping is `5435`. Make sure `.env` has `DATABASE_URL=postgres://...@localhost:5435/...`.
+
+### Resetting Postgres credentials
+
+The Postgres image runs `initdb` **only on the first start against an empty volume**. If you later change `POSTGRES_USER`, `POSTGRES_PASSWORD`, or `POSTGRES_DB` in `.env`, the new values are silently ignored — the container keeps using the credentials baked in on first init. To pick up the new values, wipe the volume and recreate:
+
+```bash
+docker compose -f docker-compose.dev.yml down -v
+docker compose -f docker-compose.dev.yml up -d
+```
+
+`-v` drops the named volume, triggering a fresh `initdb` with the current env vars. Destructive — only safe in dev, where seed data is regenerable.
+
 ## Documentation
 
 - [`CLAUDE.md`](./CLAUDE.md) — full project specification (stack, structure, conventions, CI rules).
