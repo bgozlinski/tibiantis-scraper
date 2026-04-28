@@ -19,7 +19,8 @@ Postawić infrastrukturę zadań cyklicznych — **Celery worker + Celery Beat +
 
 **W scope:**
 - `poetry add celery redis django-celery-beat`
-- Redis lokalnie (Memurai na Windows, lub WSL2 redis-server)
+- **`docker-compose.dev.yml`** z serwisami `postgres` + `redis` (lokalna infra reproducible cross-platform; eliminuje pre-flight Memurai vs WSL2 decision)
+- Migracja Postgres z lokalnej instalacji na dockerized (data dev-only, re-seed akceptowalne)
 - `config/celery.py` — Celery app config + autodiscover
 - `config/__init__.py` — Celery app load przy starcie Django
 - `apps/characters/tasks.py` — task `scrape_watched_characters()` iterujący po wszystkich Character w DB
@@ -42,7 +43,8 @@ Postawić infrastrukturę zadań cyklicznych — **Celery worker + Celery Beat +
 
 | Obszar | Wybór | Dlaczego |
 |---|---|---|
-| Broker | Redis | CLAUDE.md §2 mandatory. Mature, prosty, znany. |
+| Local infra (dev) | **`docker-compose.dev.yml` z `postgres` + `redis`** | Reproducible cross-platform, eliminuje Memurai/WSL2 decision, foundation pod późniejszy production `docker-compose.yml` (CLAUDE.md §10). App (Django/Celery) wciąż na hoście; tylko infra w kontenerach. |
+| Broker | Redis (kontener `redis:7-alpine`) | CLAUDE.md §2 mandatory. Mature, prosty, znany. Alpine = mały image. |
 | Result backend | Redis (ten sam serwer, inna DB index, np. `db=2`) | CLAUDE.md §2 nie precyzuje, najlżejsza opcja. Alternatywa: `django-db` jeśli chcemy mieć results w Postgres — odrzucone, dokłada IO do Postgres bez wartości na ten moment. |
 | Beat schedule | `django-celery-beat` (DB-backed) | CLAUDE.md §6: "konfiguracja w bazie przez `django-celery-beat`, żeby zmieniać interwały bez deployu". Trade-off: dodatkowe migracje + zależność, ale unblockuje runtime tuning. |
 | Worker pool (Windows dev) | `--pool=solo` | Windows nie wspiera prefork (`fork()` brak). Solo jest single-threaded ale wystarczy dla M3 dev. W prod (Linux Docker) wrócimy do prefork. |
@@ -66,26 +68,40 @@ Alternatywy rozważone i odrzucone:
 
 ## 5. Breakdown — 5 Issues
 
-### D13 — [M3-D13] Redis + Celery dependencies + django-celery-beat (~3h)
-**Branch:** `feat/<N>-celery-deps`
+### D13 — [M3-D13] docker-compose.dev.yml + Celery dependencies + django-celery-beat (~4h)
+**Branch:** `feat/<N>-docker-dev-celery-deps`
 
-**Pre-flight (przed startem):** Sprawdzić czy Redis działa lokalnie. **Decyzja Memurai vs WSL2** zapisana w body Issue:
-- **Memurai** (Windows-native, drop-in Redis 7.x replacement) — zalecane dla solo-dev na Windows, instalacja przez `winget install Memurai.MemuraiDeveloper` lub MSI. Free Developer edition.
-- **WSL2 redis-server** — wymaga WSL2 setup, ale to "prawdziwy" Redis. Jeśli już używasz WSL2 do innych rzeczy, prostszy wybór.
+**Pre-flight (przed startem):**
+- Docker Desktop (Windows/Mac) lub Docker Engine (Linux) zainstalowany. Smoke: `docker --version` + `docker compose version`.
+- Lokalny Postgres (jeśli chodzi w tle) **STOP** — port 5432 będzie potrzebny dla kontenera. Alternatywa: remap portu kontenera na 5433 i update `DATABASE_URL`. Decyzja zapisana w body Issue.
+- Sanity: `poetry add celery redis django-celery-beat --dry-run` zwraca OK.
 
 Acceptance criteria:
-- Redis dostępny lokalnie pod `redis://localhost:6379/`. Smoke: `redis-cli ping` → `PONG`.
-- `poetry add celery redis django-celery-beat` zacommitowane (w jednej operacji, jeden PR).
+- `docker-compose.dev.yml` w root repo z 2 serwisami:
+  - `postgres` (image `postgres:16-alpine`, env `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` z `.env`, healthcheck `pg_isready`, volume `postgres_data:/var/lib/postgresql/data`, port `5432:5432`)
+  - `redis` (image `redis:7-alpine`, healthcheck `redis-cli ping`, port `6379:6379`, **bez** persistent volume — broker/result są ephemeral, M3 nie potrzebuje persistencji Redis).
+- `docker compose -f docker-compose.dev.yml up -d` startuje oba kontenery healthy.
+- `docker compose -f docker-compose.dev.yml down` (bez `-v`) zatrzymuje, ale dane Postgres przetrwają (volume `postgres_data`).
+- `poetry add celery redis django-celery-beat` zacommitowane.
 - `INSTALLED_APPS += ["django_celery_beat"]` w `config/settings/base.py`.
 - `python manage.py migrate` aplikuje migracje `django_celery_beat` (tworzy tabele `PeriodicTask`, `IntervalSchedule`, `CrontabSchedule` itd.) — bez custom migration artifact w `apps/`.
-- `.env.example` rozszerzone o `REDIS_URL=redis://localhost:6379/0`, `CELERY_BROKER_URL=redis://localhost:6379/1`, `CELERY_RESULT_BACKEND=redis://localhost:6379/2` (3 osobne DB w jednym Redis instance — broker, results, future cache).
-- `config/settings/base.py` czyta te 3 zmienne przez `env(...)`.
-- Commit message zawiera info o Memurai/WSL2 wybranym lokalnie.
-- Test: brak — to PR czysto dependency.
+- `.env.example` rozszerzone o:
+  - `POSTGRES_USER=tibiantis`, `POSTGRES_PASSWORD=tibiantis`, `POSTGRES_DB=tibiantis` (do mapowania w docker-compose)
+  - `DATABASE_URL=postgres://tibiantis:tibiantis@localhost:5432/tibiantis` (host `localhost`, bo app na hoście)
+  - `REDIS_URL=redis://localhost:6379/0`, `CELERY_BROKER_URL=redis://localhost:6379/1`, `CELERY_RESULT_BACKEND=redis://localhost:6379/2`
+- README.md sekcja "Local infra (dev)" — komendy `docker compose -f docker-compose.dev.yml up -d`, `down`, `logs`, plus uwaga o porcie 5432.
+- Smoke: po `up -d` → `redis-cli ping` (przez `docker compose exec redis redis-cli ping`) → `PONG`. `psql` lub `python manage.py dbshell` łączy się z dockerized Postgres.
+- Test: brak — to PR czysto infrastructure + dependency.
 
-**Pułapka A:** `redis-py` (Python client) ma od 4.x wymagane parametry connection (`decode_responses` itp.). Celery wewnętrznie obsługuje to sam, ale jeśli kiedyś dodasz direct `redis.Redis(...)` w app code — sprawdź dokumentację. Na M3 nie dotykamy direct Redis client.
+**Pułapka A:** Konflikt portu 5432 z lokalnie zainstalowanym Postgres. Mitigacja: stop lokalny serwis, **albo** w `docker-compose.dev.yml` zmapuj `"5433:5432"` i ustaw `DATABASE_URL=postgres://...@localhost:5433/...`. Konsekwencja drugiej opcji: `.env.example` musi być spójny.
 
-**Pułapka B:** `django-celery-beat` ma `migrations/` z `PeriodicTask` itp. — pierwszy `migrate` na świeżej bazie zadziała, ale jeśli ktoś ma już bazę z M2 — `python manage.py migrate django_celery_beat` musi być explicit.
+**Pułapka B:** `redis-py` (Python client) ma od 4.x wymagane parametry connection (`decode_responses` itp.). Celery wewnętrznie obsługuje to sam, ale jeśli kiedyś dodasz direct `redis.Redis(...)` w app code — sprawdź dokumentację. Na M3 nie dotykamy direct Redis client.
+
+**Pułapka C:** `django-celery-beat` ma `migrations/` z `PeriodicTask` itp. — pierwszy `migrate` na świeżej bazie (po dockerization) zadziała, ale dane z poprzedniej lokalnej instancji **nie przejdą** automatycznie. Akceptowalne — dev-only, re-seed via `manage.py createsuperuser` + `scrape_character` ręcznie.
+
+**Pułapka D:** `docker compose` (v2, plugin) vs `docker-compose` (v1, deprecated). Wszystkie komendy w README używają v2 syntax (`docker compose ...`). Jeśli ktoś ma tylko v1 — `pip install docker-compose` LUB upgrade Docker Desktop do najnowszej.
+
+**Pułapka E:** CI (`.github/workflows/ci.yml`) używa GitHub Actions services dla Postgres + Redis (już w M2 obecne dla Postgres, dla Redis po D13 dodać). **NIE** zmieniamy CI na docker-compose — services w GHA są szybsze niż docker compose up. `docker-compose.dev.yml` jest tylko dla local dev.
 
 ### D14 — [M3-D14] Celery app config + ping task (~3h)
 **Branch:** `feat/<N>-celery-app`
@@ -211,7 +227,8 @@ Acceptance criteria (testy):
 
 | # | Ryzyko | Mitigacja |
 |---|---|---|
-| R1 | Redis na Windows nie chodzi out-of-the-box | Pre-flight w D13 — Memurai (drop-in) lub WSL2 redis-server. Zapisać wybrany w body Issue D13. |
+| R1 | Docker Desktop nie zainstalowany / nie startuje | Pre-flight w D13 — `docker --version` + `docker compose version` przed startem. Linki do install docs w body Issue D13. |
+| R1b | Konflikt portu 5432 z lokalnym Postgres | Pre-flight: stop lokalny serwis, lub remap kontenera na 5433. Decyzja zapisana w body Issue D13. |
 | R2 | Celery worker prefork na Windows wywala `PermissionError` | `--pool=solo` jako default w README dev section. Dokumentacja w D15 explicit. |
 | R3 | Celery + Twisted reactor (Scrapy) konflikt event loops | M1 retro #8 lekcja — trzymać scraping w **subprocess** z `manage.py scrape_character`. Worker nie sees Twisted wcale. Decyzja w sekcji 3 i AC D16. |
 | R4 | `django-celery-beat` migrations na bazie z M2 | AC D13 explicit `migrate`. Jeśli ktoś robi merge z innego brancha — `migrate django_celery_beat` w pre-merge checklist. |
@@ -261,8 +278,7 @@ Specjalnie wymienione "kuszące dodatki" które ODRZUCAMY:
 
 ## 10. Pre-flight checklist (przed startem D13)
 
-- [ ] Redis lokalnie działa (`redis-cli ping` → `PONG`).
-- [ ] **Wybór: Memurai vs WSL2** zapisany w body Issue D13.
+- [ ] **Docker Desktop / Engine** zainstalowany i działa (`docker --version`, `docker compose version`).
+- [ ] **Decyzja portu 5432**: stop lokalnego Postgres serwisu, lub remap kontenera na 5433 (zapisane w body Issue D13).
 - [ ] `poetry add celery redis django-celery-beat --dry-run` zwraca OK (brak konfliktu z Django 6, simplejwt, strawberry-django).
-- [ ] `poetry run python -c "import celery; print(celery.__version__)"` po dodaniu — sanity że poetry venv widzi celery.
-- [ ] `M3 GitHub milestone` utworzony, 5 Issues z linkami do tego spec'a.
+- [ ] M3 GitHub Milestone utworzony, 5 Issues (D13-D17) z linkami do tego spec'a.
