@@ -42,10 +42,10 @@ repos:
 
   # Django 6.0 — automatyczna modernizacja składni
   - repo: https://github.com/adamchainz/django-upgrade
-    rev: 1.22.1
+    rev: 1.30.0
     hooks:
       - id: django-upgrade
-        args: [--target-version, "5.1"]
+        args: [--target-version, "6.0"]
 
 
   # Poetry — spójność pyproject.toml + poetry.lock
