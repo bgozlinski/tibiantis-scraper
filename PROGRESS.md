@@ -126,18 +126,28 @@ Wszystkie 4 zadania ukończone, milestone zamknięty. Design spec: [`docs/superp
 **Strict chain:** D13 → D14 → D15 → D16 → D17 (zero paralelizmu, każdy Issue po pełnym merge poprzedniego — kontynuacja konwencji M0-M2).
 **Świadomie wąski scope:** Celery + Beat + Redis + scheduled `Character.objects.all()` scrape. **Bez** Discorda, bedmage trackera, deathów, Mongo loggingu — to M4+.
 
+### Ukończone (M3)
+- ✅ [#58](https://github.com/bgozlinski/tibiantis-scraper/issues/58) [M3-D13] docker-compose.dev.yml + Celery deps + django-celery-beat (2026-04-28) — PR [#64](https://github.com/bgozlinski/tibiantis-scraper/pull/64) — squash `9838696`
+
 ### Otwarte (M3)
-- ⏳ [#58](https://github.com/bgozlinski/tibiantis-scraper/issues/58) [M3-D13] docker-compose.dev.yml + Celery dependencies + django-celery-beat (~4h)
 - ⏳ [#59](https://github.com/bgozlinski/tibiantis-scraper/issues/59) [M3-D14] Celery app config + ping task (~3h, zależy od #58)
 - ⏳ [#60](https://github.com/bgozlinski/tibiantis-scraper/issues/60) [M3-D15] Worker + Beat dev runners + DatabaseScheduler default (~2-3h, zależy od #59)
 - ⏳ [#61](https://github.com/bgozlinski/tibiantis-scraper/issues/61) [M3-D16] `scrape_watched_characters` task + Beat schedule (~4h, zależy od #60)
 - ⏳ [#62](https://github.com/bgozlinski/tibiantis-scraper/issues/62) [M3-D17] Celery e2e test + unit tests + M3 closure (~3-4h, zależy od #61)
 
-### Pre-flight checklist (przed startem D13, ze spec'a §10)
-- [ ] **Docker Desktop / Engine** zainstalowany (`docker --version`, `docker compose version`).
-- [ ] **Decyzja portu 5432:** stop lokalnego Postgres serwisu, lub remap kontenera na 5433. Zapisać w body Issue #58 przed startem implementacji.
-- [ ] `poetry add celery redis django-celery-beat --dry-run` zwraca OK (brak konfliktu z Django 6, simplejwt, strawberry-django).
+### Pre-flight checklist (przed startem D13, ze spec'a §10) — ✅ wszystkie domknięte
+- [x] **Docker Desktop / Engine** zainstalowany (`docker --version` 28.5.1, `docker compose version` v2.40).
+- [x] **Decyzja portu:** **5435** (lokalny Postgres na 5432 + inne projekty Docker na 5433-5434 zajmują niższe porty) — udokumentowane w PR [#64](https://github.com/bgozlinski/tibiantis-scraper/pull/64) i `.env.example`.
+- [x] `poetry add celery redis django-celery-beat --dry-run` zwraca OK (brak konfliktu z Django 6, simplejwt, strawberry-django) — finalne wersje: `celery 5.6.3`, `redis 7.4.0`, `django-celery-beat 2.9.0`.
 - [x] Milestone "M3 — Celery infrastructure" utworzony, 5 Issues (#58-#62) z linkami do spec'a.
+
+### Notatki z retro M3 (dopisywane progresywnie)
+- **#58 (merge 2026-04-28):** Trzy classic Postgres image gotchas złapane przy smoke testach przed mergem:
+  - **`POSTGRES_NAME` ≠ `POSTGRES_DB`** — Postgres image rozpoznaje **wyłącznie** `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB` (case-sensitive, exact match). `POSTGRES_NAME` z pierwszej wersji `.env` (skopiowane z innego projektu) było cicho ignorowane → fallback do default user/db. Lekcja: `.env.example` jest jedynym źródłem prawdy dla nazw zmiennych, `.env` musi być 1:1.
+  - **`initdb` only-on-first-start** — Postgres image tworzy role + bazę z `POSTGRES_*` **tylko** przy starcie na pustym volume. Każda kolejna zmiana `POSTGRES_*` w `.env` jest cicho ignorowana, dopóki volume nie zostanie zrzucony (`down -v`). To powtarzalna pułapka — w prod (M9) z prawdziwymi danymi koszt by był znacznie wyższy (`pg_dump` + recreate + restore zamiast `down -v`).
+  - **`DATABASE_URL` musi być w pełni zsynchronizowany z `POSTGRES_*` + portem** — to dwa różne kanały konfiguracji do tej samej bazy (`POSTGRES_*` → kontener przy initdb, `DATABASE_URL` → Django URL parser). Brak synchronizacji = sukces `up -d` + fail Django connect (silent w produkcji). Refactor "konstruuj DSN z komponentów w settings" (Opcja B z dyskusji) odłożony na osobny chore PR po D13 — DRY trade-off vs scope creep, scope wygrał.
+- **#58 deviation od spec'a:** port hosta **5435** zamiast 5433 (z spec D13 AC), bo lokalny Postgres + `scrapper-service-db` (inny projekt Docker) zajmowały 5432-5434. Świadoma decyzja, udokumentowana w PR + README + `.env.example`.
+- **#58 ops:** PR description nie zawierał `Closes #58` → Issue nie auto-zamknął się przy mergu, zamknięty ręcznie przez `gh issue close 58`. Lekcja na M3-D14+: w PR body dodać explicit `Closes #<N>`.
 
 ### Zasady przeniesione z retro M0-M2 (do egzekwowania w M3)
 - **Pattern z M2:** mini-retro po 3/4 Issues (po #61 a przed #62) — drift schema check / coverage check zanim wjedziemy w testy + closure.
