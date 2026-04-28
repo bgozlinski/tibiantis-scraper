@@ -128,9 +128,9 @@ Wszystkie 4 zadania ukończone, milestone zamknięty. Design spec: [`docs/superp
 
 ### Ukończone (M3)
 - ✅ [#58](https://github.com/bgozlinski/tibiantis-scraper/issues/58) [M3-D13] docker-compose.dev.yml + Celery deps + django-celery-beat (2026-04-28) — PR [#64](https://github.com/bgozlinski/tibiantis-scraper/pull/64) — squash `9838696`
+- ✅ [#59](https://github.com/bgozlinski/tibiantis-scraper/issues/59) [M3-D14] Celery app config + ping task (2026-04-28) — PR [#68](https://github.com/bgozlinski/tibiantis-scraper/pull/68) — squash `14ddb76`; deps via PR [#66](https://github.com/bgozlinski/tibiantis-scraper/pull/66) (mypy additional_dependencies) + PR [#67](https://github.com/bgozlinski/tibiantis-scraper/pull/67) (mypy module overrides)
 
 ### Otwarte (M3)
-- ⏳ [#59](https://github.com/bgozlinski/tibiantis-scraper/issues/59) [M3-D14] Celery app config + ping task (~3h, zależy od #58)
 - ⏳ [#60](https://github.com/bgozlinski/tibiantis-scraper/issues/60) [M3-D15] Worker + Beat dev runners + DatabaseScheduler default (~2-3h, zależy od #59)
 - ⏳ [#61](https://github.com/bgozlinski/tibiantis-scraper/issues/61) [M3-D16] `scrape_watched_characters` task + Beat schedule (~4h, zależy od #60)
 - ⏳ [#62](https://github.com/bgozlinski/tibiantis-scraper/issues/62) [M3-D17] Celery e2e test + unit tests + M3 closure (~3-4h, zależy od #61)
@@ -148,6 +148,17 @@ Wszystkie 4 zadania ukończone, milestone zamknięty. Design spec: [`docs/superp
   - **`DATABASE_URL` musi być w pełni zsynchronizowany z `POSTGRES_*` + portem** — to dwa różne kanały konfiguracji do tej samej bazy (`POSTGRES_*` → kontener przy initdb, `DATABASE_URL` → Django URL parser). Brak synchronizacji = sukces `up -d` + fail Django connect (silent w produkcji). Refactor "konstruuj DSN z komponentów w settings" (Opcja B z dyskusji) odłożony na osobny chore PR po D13 — DRY trade-off vs scope creep, scope wygrał.
 - **#58 deviation od spec'a:** port hosta **5435** zamiast 5433 (z spec D13 AC), bo lokalny Postgres + `scrapper-service-db` (inny projekt Docker) zajmowały 5432-5434. Świadoma decyzja, udokumentowana w PR + README + `.env.example`.
 - **#58 ops:** PR description nie zawierał `Closes #58` → Issue nie auto-zamknął się przy mergu, zamknięty ręcznie przez `gh issue close 58`. Lekcja na M3-D14+: w PR body dodać explicit `Closes #<N>`.
+- **#59 (merge 2026-04-28):** Trzy chore PR-y "satellite" wymagane wokół jednego feature commit, plus jeden fix-up CI w trakcie:
+  - **`@shared_task` + mypy strict** — Celery 5.6 nie ma kompletnych typed signatures dla `shared_task`/`@app.task`. Inline `# type: ignore[misc]` failuje cross-env (pre-commit env raportuje `[misc]`, direct `poetry run mypy` raportuje `[untyped-decorator]` — różne mypy versions/configs w isolated envs dają różne error codes). Final approach: per-module override w `pyproject.toml` (`disallow_untyped_decorators = false` dla `apps.*.tasks`) — granularny, działa identycznie w obu envs, DRY dla M3-D16/M4 future tasks. Landed jako PR #67.
+  - **Pre-commit isolated env vs poetry venv** — `poetry add celery` dał paczkę do venv aplikacji, ale **pre-commit mypy hook biega w odseparowanym sandboxie** (`additional_dependencies` w `.pre-commit-config.yaml`). Bez `celery` + `django-celery-beat` w tej liście → `ModuleNotFoundError` przy `pre-commit run mypy`. Precedens był M1 #24 (scrapy/crochet/twisted). Każda nowa Python lib importowana w `apps/` wymaga **drugiego dodawania** w pre-commit config — repeatable gotcha. Landed jako PR #66.
+  - **CI env vars sync z `settings/base.py`** — dodanie `env("CELERY_RESULT_BACKEND")` w `base.py` bez default'u → `ImproperlyConfigured` przy `manage.py migrate` w CI test job (env nie ustawione w `.github/workflows/ci.yml`). Fix-up commit w D14 PR (`fix(ci): add CELERY_RESULT_BACKEND env`). M0 retro #3 lekcja "11 commitów fixów CI" wraca — settings w trybie strict (no defaults) + env vars w CI = checklist do trzymania razem.
+- **#59 lekcja procesu** — *przy każdym dodaniu deps lub `env(...)` w settings sprawdzić TRZY miejsca przed pushem:*
+  1. `pyproject.toml` (poetry add) — venv aplikacji
+  2. `.pre-commit-config.yaml` mypy `additional_dependencies` — pre-commit isolated env (jeśli importowany w `apps/`)
+  3. `.github/workflows/ci.yml` env block — CI test job (jeśli `env(...)` w `settings/base.py` bez default)
+  Sanity przed pushem: `poetry run pre-commit run --all-files` ZIELONY + `git grep -l "env(" config/settings/` vs `grep "env_var:" .github/workflows/ci.yml` ręczna kontrola.
+- **#59 deviation od spec'a:** żadna — wszystkie trzy AC fix'y (settings.dev zamiast base, `Celery("tibiantis")` zamiast "config", drop `debug_task`) zaaplikowane po review. Spec D14 §AC był niezmieniony.
+- **#59 ops:** `Closes #59` w PR body zadziałało — Issue auto-closed at merge. Lekcja z #58 ops zaaplikowana skutecznie.
 
 ### Zasady przeniesione z retro M0-M2 (do egzekwowania w M3)
 - **Pattern z M2:** mini-retro po 3/4 Issues (po #61 a przed #62) — drift schema check / coverage check zanim wjedziemy w testy + closure.
