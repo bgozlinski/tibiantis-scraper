@@ -118,3 +118,29 @@ Wszystkie 4 zadania ukończone, milestone zamknięty. Design spec: [`docs/superp
     - `_parse_last_login` hardcoduje `Europe/Berlin` zamiast walidować odczytaną TZ (`_tz` jest odrzucony) — cichy bug gdyby serwer kiedyś zmienił TZ. Minimum: assert `_tz in {"CEST","CET"}` albo warning.
     - Fragile fixture path `Path(__file__).resolve().parents[3]` w `test_character_spider.py:15` — przy reorg katalogów cicho zwróci złą ścieżkę. Refactor do `conftest.py` w `tests/`.
 - **Najwartościowsza lekcja M2:** **mini-retro w trakcie milestone** (po 3/4 issuesach) zadziałała — drift schema check przed #31 oszczędził minimum jedną rundę naprawy. Zachować jako pattern dla M3.
+
+## 🚀 Milestone M3 — Celery infrastructure IN PROGRESS (start 2026-04-28)
+
+**Design spec:** [`docs/superpowers/specs/2026-04-28-m3-celery-fundament-design.md`](docs/superpowers/specs/2026-04-28-m3-celery-fundament-design.md) — zmergowany PR [#57](https://github.com/bgozlinski/tibiantis-scraper/pull/57) (squash `f599c69`).
+**Budżet:** 5 dni roboczych (~16-20h, z buforem +1d po lekcji M2).
+**Strict chain:** D13 → D14 → D15 → D16 → D17 (zero paralelizmu, każdy Issue po pełnym merge poprzedniego — kontynuacja konwencji M0-M2).
+**Świadomie wąski scope:** Celery + Beat + Redis + scheduled `Character.objects.all()` scrape. **Bez** Discorda, bedmage trackera, deathów, Mongo loggingu — to M4+.
+
+### Otwarte (M3)
+- ⏳ [#58](https://github.com/bgozlinski/tibiantis-scraper/issues/58) [M3-D13] docker-compose.dev.yml + Celery dependencies + django-celery-beat (~4h)
+- ⏳ [#59](https://github.com/bgozlinski/tibiantis-scraper/issues/59) [M3-D14] Celery app config + ping task (~3h, zależy od #58)
+- ⏳ [#60](https://github.com/bgozlinski/tibiantis-scraper/issues/60) [M3-D15] Worker + Beat dev runners + DatabaseScheduler default (~2-3h, zależy od #59)
+- ⏳ [#61](https://github.com/bgozlinski/tibiantis-scraper/issues/61) [M3-D16] `scrape_watched_characters` task + Beat schedule (~4h, zależy od #60)
+- ⏳ [#62](https://github.com/bgozlinski/tibiantis-scraper/issues/62) [M3-D17] Celery e2e test + unit tests + M3 closure (~3-4h, zależy od #61)
+
+### Pre-flight checklist (przed startem D13, ze spec'a §10)
+- [ ] **Docker Desktop / Engine** zainstalowany (`docker --version`, `docker compose version`).
+- [ ] **Decyzja portu 5432:** stop lokalnego Postgres serwisu, lub remap kontenera na 5433. Zapisać w body Issue #58 przed startem implementacji.
+- [ ] `poetry add celery redis django-celery-beat --dry-run` zwraca OK (brak konfliktu z Django 6, simplejwt, strawberry-django).
+- [x] Milestone "M3 — Celery infrastructure" utworzony, 5 Issues (#58-#62) z linkami do spec'a.
+
+### Zasady przeniesione z retro M0-M2 (do egzekwowania w M3)
+- **Pattern z M2:** mini-retro po 3/4 Issues (po #61 a przed #62) — drift schema check / coverage check zanim wjedziemy w testy + closure.
+- **Pattern z M1 retro #8:** branch dla `docs/close-m3-tracker` zakładać **OD świeżego master po merge'u #62**, nie OD test brancha. `git checkout master && git pull && git checkout -b docs/close-m3-tracker`.
+- **Pattern z M2 #28:** `gh issue create --body-file <plik>` zamiast `--body` na Windows (heredoc/quoting zjada markdown).
+- **Pattern z M0 #3:** wersje narzędzi (Poetry 2.x, Python 3.13) nie wymyślać z głowy — sprawdzać CI przed pinowaniem w CLAUDE.md / pre-commit. M3 dotyka deps (`poetry add`) i Docker (`postgres:16-alpine`, `redis:7-alpine`); jeśli wersja w spec'u nie pasuje do realnej rzeczywistości — fix w spec'u, nie w branchu funkcjonalnym.
