@@ -47,6 +47,7 @@ THIRD_PARTY_APPS: list[str] = [
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
     "strawberry_django",
+    "django_celery_beat",
 ]
 
 LOCAL_APPS: list[str] = [
