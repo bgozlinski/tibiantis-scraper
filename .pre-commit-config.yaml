@@ -39,6 +39,8 @@ repos:
           - scrapy
           - crochet
           - twisted
+          - celery
+          - django-celery-beat
 
   # Django 6.0 — automatyczna modernizacja składni
   - repo: https://github.com/adamchainz/django-upgrade
