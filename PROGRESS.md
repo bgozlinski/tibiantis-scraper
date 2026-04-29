@@ -119,7 +119,7 @@ Wszystkie 4 zadania ukończone, milestone zamknięty. Design spec: [`docs/superp
     - Fragile fixture path `Path(__file__).resolve().parents[3]` w `test_character_spider.py:15` — przy reorg katalogów cicho zwróci złą ścieżkę. Refactor do `conftest.py` w `tests/`.
 - **Najwartościowsza lekcja M2:** **mini-retro w trakcie milestone** (po 3/4 issuesach) zadziałała — drift schema check przed #31 oszczędził minimum jedną rundę naprawy. Zachować jako pattern dla M3.
 
-## 🚀 Milestone M3 — Celery infrastructure IN PROGRESS (start 2026-04-28)
+## 🎉 Milestone M3 — Celery infrastructure COMPLETED (2026-04-29)
 
 **Design spec:** [`docs/superpowers/specs/2026-04-28-m3-celery-fundament-design.md`](docs/superpowers/specs/2026-04-28-m3-celery-fundament-design.md) — zmergowany PR [#57](https://github.com/bgozlinski/tibiantis-scraper/pull/57) (squash `f599c69`).
 **Budżet:** 5 dni roboczych (~16-20h, z buforem +1d po lekcji M2).
@@ -131,9 +131,7 @@ Wszystkie 4 zadania ukończone, milestone zamknięty. Design spec: [`docs/superp
 - ✅ [#59](https://github.com/bgozlinski/tibiantis-scraper/issues/59) [M3-D14] Celery app config + ping task (2026-04-28) — PR [#68](https://github.com/bgozlinski/tibiantis-scraper/pull/68) — squash `14ddb76`; deps via PR [#66](https://github.com/bgozlinski/tibiantis-scraper/pull/66) (mypy additional_dependencies) + PR [#67](https://github.com/bgozlinski/tibiantis-scraper/pull/67) (mypy module overrides); follow-up testy PR [#70](https://github.com/bgozlinski/tibiantis-scraper/pull/70) — squash `72770df`
 - ✅ [#60](https://github.com/bgozlinski/tibiantis-scraper/issues/60) [M3-D15] Worker + Beat dev runners + DatabaseScheduler default (2026-04-28) — PR [#71](https://github.com/bgozlinski/tibiantis-scraper/pull/71) — squash `ba4cd35`
 - ✅ [#61](https://github.com/bgozlinski/tibiantis-scraper/issues/61) [M3-D16] `scrape_watched_characters` task + Beat schedule (PeriodicTask data migration) (2026-04-29) — PR [#73](https://github.com/bgozlinski/tibiantis-scraper/pull/73) — squash `0ad4c53`
-
-### Otwarte (M3)
-- ⏳ [#62](https://github.com/bgozlinski/tibiantis-scraper/issues/62) [M3-D17] Celery e2e test + unit tests + M3 closure (~3-4h, zależy od #61)
+- ✅ [#62](https://github.com/bgozlinski/tibiantis-scraper/issues/62) [M3-D17] Celery e2e test + unit tests + M3 closure (2026-04-29) — PR [#75](https://github.com/bgozlinski/tibiantis-scraper/pull/75) — squash `ae25cfc`
 
 ### Pre-flight checklist (przed startem D13, ze spec'a §10) — ✅ wszystkie domknięte
 - [x] **Docker Desktop / Engine** zainstalowany (`docker --version` 28.5.1, `docker compose version` v2.40).
@@ -170,10 +168,53 @@ Wszystkie 4 zadania ukończone, milestone zamknięty. Design spec: [`docs/superp
   - **`auto_now=True` blokuje set przy `create()`** — pułapka B z spec'a D17 §AC, weryfikowana podczas testów seed: `Character.objects.create(name='StaleTester', last_scraped_at=...)` ignoruje passed value (auto_now overrideuje przy save). Workaround: osobny `update()` po create. Klasyczna Django gotcha — D17 testy będą używać tego patternu.
 - **#61 deviation od spec'a:** subprocess call z positional `name` zamiast `--name <value>` (spec'em §5/D16) — udokumentowane w pre-flight + PR description. Spec design pisany przed sprawdzeniem M1 cmd sygnatury.
 - **#61 ops:** `Closes #61` w PR body zadziałało — Issue auto-closed at 2026-04-29T00:11:36Z. Solo-repo paradox: Claude zostawił LGTM (self-approve zablokowany przez GitHub), user zmerge'ował jako admin via `enforce_admins=false`.
-- **M3 progress: 4/5 done w ~2 dni real time** (start 2026-04-28, D16 close 2026-04-29). Budget był 5 dni — wyprzedzenie ~3 dni mimo trzech satellite chore PR-ów (#66 #67 + cross-env mypy gymnastics w D14/D16). Pozostaje #62 D17 (testy + closure) — Claude pisze testy follow-up per workflow.
+- **#62 (merge 2026-04-29):** Closure issue M3 — testy follow-up per workflow (3 unit + 1 integration e2e). PR #75 zielony od pierwszego strzału w CI (lint 1m30s, pytest 1m18s), zero satellite chore PR-ów, zero CI fix-up commits. Detale:
+  - **Mock path discipline — `apps.characters.tasks.subprocess.run`** (nie `subprocess.run` globalnie). Klasyczne "patch where it's used, not where it's defined" — gdyby ktoś przeniósł `subprocess.run` w refactorze do innego modułu (np. `apps.characters.runners.run_subprocess`), patch by cicho ucichł i live spider hit'tałby tibiantis. **Defensive guard:** `mock.assert_called_once_with(...)` z explicit argumentami w teście success path — pozytywna walidacja, nie tylko negatywna.
+  - **Pułapka B z #61 zaadresowana w testach:** `auto_now=True` na `last_scraped_at` ignoruje passed value w `create()`. Helper `_make_stale_character()` w unit tests + inline `Character.objects.filter(pk=...).update(last_scraped_at=tz_dt)` w integration. `update()` omija `save()` → omija `auto_now`. Klasyczna Django gotcha, **dwa miejsca** w testach M3 ją trafiły (#61 implementation + #62 testy) — wzorzec wart zapamiętania.
+  - **`apply()` vs `delay()` w testach** — `apply()` zawsze sync, ignoruje `CELERY_TASK_ALWAYS_EAGER`. Predictable dla 3 unit + 1 integration testów. `delay()` w `test_ping_returns_pong_via_eager_delay` (z #70) używa eager flag — różny intent, różny tool.
+  - **`mock.assert_not_called()` jako positive guard** w testach `freshness_threshold` + `empty_watchlist` — bezpośrednia regresja na critical bug 2 z retro #61 (counter swap fresh→scraped). Gdyby ktoś znów napisał `scraped += 1` w branchu fresh-skip, test wybuchnie.
+  - **Coverage:** 88% lokalnie (próg 70% spełniony z 18pp marginesem), `apps/characters/tasks.py` **100%** (29/29 stmts). Tylko `scrape_character.py` management command (27 stmts, 0%) — pokryty integration testem M1-D8 ale liczony osobno; nie regresja.
+  - **CRLF→LF noise w worktree** — pre-commit hook `mixed-line-ending --fix=lf` przy pierwszym `--all-files` przebiegu zafiksował 55 plików (Windows `core.autocrlf=true` renormalizuje CRLF przy commit). **Sanity:** `git diff` na te pliki nic nie pokazuje (warning "LF will be replaced by CRLF" + pusta diff = no real change). Stage tylko 2 plików testowych przez explicit `git add tests/...` — reszta zostaje unstaged i out of commit. Lekcja M2 #29 zaaplikowana skutecznie.
+- **#62 deviation od spec'a:** żadna — wszystkie 4 testy (3 unit + 1 integration) zgodne z AC issue #62. Smoke manualny per AC do zrobienia poza PR (3-terminalowy worker + beat + runserver), nie część automated CI.
+- **#62 ops:** `Closes #62` w PR body zadziałało — Issue auto-closed at 2026-04-29T11:19:31Z. Solo-repo paradox: Claude zostawił LGTM komentarz, user zmerge'ował jako admin (squash `ae25cfc`).
 
 ### Zasady przeniesione z retro M0-M2 (do egzekwowania w M3)
 - **Pattern z M2:** mini-retro po 3/4 Issues (po #61 a przed #62) — drift schema check / coverage check zanim wjedziemy w testy + closure.
 - **Pattern z M1 retro #8:** branch dla `docs/close-m3-tracker` zakładać **OD świeżego master po merge'u #62**, nie OD test brancha. `git checkout master && git pull && git checkout -b docs/close-m3-tracker`.
 - **Pattern z M2 #28:** `gh issue create --body-file <plik>` zamiast `--body` na Windows (heredoc/quoting zjada markdown).
 - **Pattern z M0 #3:** wersje narzędzi (Poetry 2.x, Python 3.13) nie wymyślać z głowy — sprawdzać CI przed pinowaniem w CLAUDE.md / pre-commit. M3 dotyka deps (`poetry add`) i Docker (`postgres:16-alpine`, `redis:7-alpine`); jeśli wersja w spec'u nie pasuje do realnej rzeczywistości — fix w spec'u, nie w branchu funkcjonalnym.
+
+### Definition of Done M3 (ze spec'a §8) — ✅ wszystkie domknięte
+- [x] **5 PR merged, 5 Issues zamknięte** — D13 (#64), D14 (#68 + #66 + #67 + #70), D15 (#71), D16 (#73), D17 (#75). Issues #58-#62 wszystkie CLOSED.
+- [x] **`celery -A config worker -P solo` startuje, podpięty do Redis** — verified D14 smoke (`ping → pong` przez eager + worker autodiscover task).
+- [x] **`celery -A config beat` startuje, podpięty do `DatabaseScheduler`** — verified D15 smoke (`Scheduler: django_celery_beat.schedulers.DatabaseScheduler` w log starcie beat'a).
+- [x] **`PeriodicTask("scrape_watched_characters")` enableable w admin, scrape'uje `Character.objects.all()` co interval** — D16 PeriodicTask data migration (`apps/characters/migrations/0003_seed_default_periodic_task.py`) + manual smoke z 1-min interval.
+- [x] **Subprocess `scrape_character` aktualizuje `Character.last_scraped_at`** — D16 task wywołuje `[sys.executable, "manage.py", "scrape_character", name]` przez `subprocess.run()`, M1-D8 cmd zapisuje przez service.
+- [x] **Freshness threshold działa (skip jeśli < 30min od ostatniego scrape)** — `CELERY_SCRAPE_FRESHNESS_MINUTES=30` (env-overridable) + D17 unit test `test_scrape_watched_characters_respects_freshness_threshold` weryfikuje pozytywnie (`mock.assert_not_called()`).
+- [x] **Wszystkie pre-commit + CI zielone na master** — ostatni master commit `ae25cfc` przeszedł lint (1m30s) + pytest (1m18s) bez błędów.
+- [x] **`coverage threshold = 70` zachowane** — lokalnie 88% (margines 18pp). `apps/characters/tasks.py` 100%.
+- [x] **PROGRESS.md: "🎉 M3 COMPLETED" + retro per Issue** — ten dokument.
+- [x] **Milestone M3 zamknięty na GitHub** — TODO ostatni krok po merge tego PR-a (`gh api -X PATCH repos/:owner/:repo/milestones/11 -f state=closed`).
+
+### Podsumowanie M3 (2026-04-28 → 2026-04-29, 2 dni vs 5 z budżetu — 3 dni wyprzedzenia)
+- **5 Issues (#58-#62) + 4 satellite PR-y** (#66 mypy additional_deps, #67 mypy module overrides, #70 ping testy follow-up, #75 D17 testy follow-up). Total 9 PR. Strict chain D13→D14→D15→D16→D17 zachowany.
+- **DoD M3 spełnione** — Celery + Beat + DatabaseScheduler + scheduled `scrape_watched_characters` co interval, freshness threshold działający, smoke manualny przeszedł, coverage 88%.
+- **Najwartościowsze lekcje M3:**
+  1. **Mypy cross-env gymnastics** — pre-commit isolated env vs poetry venv generuje **różne error codes** dla tego samego problemu (`[misc]` vs `[untyped-decorator]` na `@shared_task`). Trzy razy w M3 (D14, D16, parametrize w D17). Wzorzec sugeruje `celery-types` package jako trwałe rozwiązanie w **post-M3 chore PR** (kandydat na pierwsze zadanie M4 pre-flight).
+  2. **Triple-source-of-truth dla deps** (lekcja procesu z #59) — każda nowa lib importowana w `apps/` wymaga **trzech** miejsc: `pyproject.toml` (poetry), `.pre-commit-config.yaml` mypy `additional_dependencies` (isolated env), `.github/workflows/ci.yml` env (jeśli `env(...)` w `settings/base.py` bez default). Brak choćby jednego = ImproperlyConfigured w CI lub ModuleNotFoundError w pre-commit. Checklist do trzymania razem.
+  3. **Postgres image gotchas** (D13) — `POSTGRES_NAME` ≠ `POSTGRES_DB`, `initdb` only-on-first-start, `DATABASE_URL` musi być **w pełni** zsynchronizowany z `POSTGRES_*`. W M9 (Dockeryzacja prod) to się odbije bo `down -v` nie będzie opcją na żywych danych — wzorzec do weryfikacji wcześniej.
+  4. **Code review przed merge — 2 critical bugs w #61** (settings name typo `SCRAPING_THRESHHOLD_MINUTES` z literówką, counter swap `scraped` zamiast `skipped`). Oba klasyczne pułapki, oba przeszły by smoke gdyby nie review (pierwszy: `getattr` cicho fallbackuje do default, drugi: `assert_called_once` na success path nie wyłapuje błędnego countera w skip path). **D17 testy mają explicit oba counters** (`assert result == {"scraped": X, "failed": Y, "skipped": Z}`), nie pojedyncze fragmentaryczne asercje.
+  5. **`auto_now=True` testowanie** — workaround `Character.objects.filter(pk=...).update(last_scraped_at=tz_dt)` (skip save → skip auto_now). Wzorzec stosowany dwa razy w M3 (#61 implementation + #62 testy), wart zapamiętania na M4 (BedmageWatch ma `created_at` auto_now_add — podobna sytuacja).
+
+### Tech debt z M3 (do adresowania post-M3)
+- **`celery-types` package** — trwałe rozwiązanie cross-env mypy gymnastics (3 razy w M3). Kandydat na pierwsze chore PR M4 lub osobny standalone PR.
+- **DSN konstrukcja z komponentów w settings** — Opcja B z dyskusji D13. Obecnie `DATABASE_URL` musi być w pełni zsynchronizowany z `POSTGRES_USER`/`PASSWORD`/`DB`/portem ręcznie. DRY refactor odłożony na M4+ (priorytet niski, wzorzec działa stabilnie).
+- **Branch protection master** — wciąż brak required status check `test / Pytest` (z post-M2 tech debt, niezamknięte w M3). Dodać w GitHub Settings → Branches.
+- **`admin.ModelAdmin` bez generic parameter** (z post-M2 tech debt) — `# type: ignore[type-arg]` zamiast `ModelAdmin[Character]`. Alternatywa: `django-stubs-ext.monkeypatch()` w `base.py`. Decyzja na później.
+- **Spider defensive parsing** (z post-M2 tech debt, niezamknięte w M3):
+  - `int(level_raw)` w `character_spider.py:49` — pada na np. `"118 (deleted)"`; potrzebny regex `^\d+` lub try/except.
+  - `_parse_last_login` hardcoduje `Europe/Berlin` zamiast walidować odczytaną TZ — cichy bug gdyby serwer kiedyś zmienił TZ. Minimum: assert `_tz in {"CEST","CET"}` albo warning.
+  - Fragile fixture path `Path(__file__).resolve().parents[3]` w `test_character_spider.py:15` — refactor do `conftest.py` w `tests/`.
+
+### Mini-retro w trakcie M3 — czy zadziałał (lekcja z M2)
+**Tak.** Pre-flight grep `add_arguments` w `scrape_character.py` przed implementacją D16 wykrył spec/M1 deviation (named vs positional arg) zanim trafił do branchu — oszczędność rundy fix'ów. Pattern do zachowania w M4: pre-flight code reading **przed** napisaniem nowego subprocess/integration call'a.
