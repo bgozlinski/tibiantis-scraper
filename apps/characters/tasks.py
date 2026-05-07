@@ -33,7 +33,7 @@ def scrape_watched_characters(self: Task) -> dict[str, int]:
     Returns: {"scraped": int, "failed": int, "skipped": int}
     """
 
-    threshold_minutes = getattr(settings, "CELERY_SCRAPE_FRESHNESS_MINUTES", 30)
+    threshold_minutes = settings.CELERY_SCRAPE_FRESHNESS_MINUTES
     cutoff = timezone.now() - timedelta(minutes=threshold_minutes)
 
     scraped = failed = skipped = 0
