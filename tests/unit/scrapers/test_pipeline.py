@@ -147,3 +147,42 @@ class TestDjangoPipelineProcessItem:
             await pipeline.process_item(full_death_item, spider)
 
         mock_upsert.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_death_pipeline_increments_duplicates_counter_on_none(
+        self,
+        pipeline: DjangoPipeline,
+        spider: MagicMock,
+        full_death_item: DeathItem,
+    ) -> None:
+        """When save_death_event returns None (dedup hit), pipeline must
+        increment ``custom/death_duplicates`` on the spider's crawler stats.
+
+        This is the only observability path for dedup volume — service is
+        intentionally silent (no log noise in prod). If this counter doesn't
+        tick, D21's task reports 0 duplicates forever, masking real scraping
+        behavior.
+        """
+        with patch("apps.deaths.services.save_death_event", return_value=None):
+            await pipeline.process_item(full_death_item, spider)
+
+        spider.crawler.stats.inc_value.assert_called_once_with(
+            "custom/death_duplicates"
+        )
+
+    @pytest.mark.asyncio
+    async def test_death_pipeline_does_not_increment_counter_on_success(
+        self,
+        pipeline: DjangoPipeline,
+        spider: MagicMock,
+        full_death_item: DeathItem,
+    ) -> None:
+        """Counter ticks ONLY on dedup (None return). A non-None return means
+        a fresh row was inserted — the spider's built-in ``item_scraped_count``
+        already covers that case, and double-counting would skew D21's report.
+        """
+        fake_event = MagicMock(pk=1)
+        with patch("apps.deaths.services.save_death_event", return_value=fake_event):
+            await pipeline.process_item(full_death_item, spider)
+
+        spider.crawler.stats.inc_value.assert_not_called()
