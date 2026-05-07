@@ -8,8 +8,12 @@ class DjangoPipeline:
             from apps.characters.services import upsert_character
 
             await sync_to_async(upsert_character)(dict(item))
+
         elif isinstance(item, DeathItem):
             from apps.deaths.services import save_death_event
 
-            await sync_to_async(save_death_event)(dict(item))
+            result = await sync_to_async(save_death_event)(dict(item))
+            if result is None:
+                spider.crawler.stats.inc_value("custom/death_duplicates")
+
         return item

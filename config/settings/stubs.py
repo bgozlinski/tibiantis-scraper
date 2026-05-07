@@ -15,5 +15,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
     "apps.characters",
+    "apps.deaths",
 ]
+
 USE_TZ = True
