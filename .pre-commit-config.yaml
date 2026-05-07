@@ -41,6 +41,7 @@ repos:
           - twisted
           - celery
           - django-celery-beat
+          - django-environ
 
   # Django 6.0 — automatyczna modernizacja składni
   - repo: https://github.com/adamchainz/django-upgrade
