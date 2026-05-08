@@ -10,6 +10,7 @@ testów (post-M3). Tu chodzi o **logikę tasku**, nie o transport Celery.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 from datetime import timedelta
@@ -20,6 +21,22 @@ from django.utils import timezone
 
 from apps.characters.models import Character
 from apps.characters.tasks import scrape_watched_characters
+
+
+def _make_stale_character(name: str = "Yhral") -> Character:
+    """Create a Character whose last_scraped_at is stale enough to bypass the
+    freshness filter in `scrape_watched_characters`.
+
+    Forces `last_scraped_at = now - 2h` so the task's 30 min freshness threshold
+    treats it as eligible for scraping. Uses `.update()` to bypass `auto_now`
+    semantics on `last_scraped_at` (M3-D17 retro #5).
+    """
+    char = Character.objects.create(name=name)
+    Character.objects.filter(pk=char.pk).update(
+        last_scraped_at=timezone.now() - timedelta(hours=2)
+    )
+    char.refresh_from_db()
+    return char
 
 
 @pytest.mark.django_db(transaction=True)
@@ -66,3 +83,82 @@ def test_scrape_watched_characters_full_flow_mixed_freshness(
 
     tester_last_scraped_after = Character.objects.get(pk=tester.pk).last_scraped_at
     assert tester_last_scraped_after == tester_last_scraped_before
+
+
+# === D26 tracker integration tests ===
+
+
+@pytest.mark.django_db(transaction=True)
+@mock.patch("apps.bedmages.services.check_bedmage_watches_for_character")
+@mock.patch("apps.characters.tasks.subprocess.run")
+def test_scrape_watched_characters_invokes_bedmage_check_on_success(
+    mock_run: mock.MagicMock,
+    mock_check: mock.MagicMock,
+) -> None:
+    """Tracker called per scraped character (returncode=0).
+
+    Verifies the post-scrape integration hook from D26: every successful scrape
+    fires `check_bedmage_watches_for_character` with the corresponding Character.
+
+    Patch target is `apps.bedmages.services.*` (NOT `apps.characters.tasks.*`)
+    because `tasks.py` lazy-imports the function inside the loop — the patch
+    intercepts at the source module so the lazy import returns the MagicMock.
+    """
+    _make_stale_character("Yhral")
+    mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
+
+    result = scrape_watched_characters.apply().get()
+
+    assert result == {"scraped": 1, "failed": 0, "skipped": 0}
+    mock_check.assert_called_once()
+    called_with = mock_check.call_args[0][0]
+    assert called_with.name == "Yhral"
+
+
+@pytest.mark.django_db(transaction=True)
+@mock.patch("apps.bedmages.services.check_bedmage_watches_for_character")
+@mock.patch("apps.characters.tasks.subprocess.run")
+def test_scrape_watched_characters_does_not_invoke_tracker_on_failure(
+    mock_run: mock.MagicMock,
+    mock_check: mock.MagicMock,
+) -> None:
+    """Failed scrape (returncode != 0) skips tracker — §4.5 invariant.
+
+    Tracker decisions must not fire on potentially stale `last_login` from a
+    failed scrape. Otherwise a "phantom bed-mage wake" notification could be
+    emitted while the character's actual state was never refreshed. Regression
+    guard for the design invariant from spec §4.5.
+    """
+    _make_stale_character("Yhral")
+    mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=1)
+
+    scrape_watched_characters.apply().get()
+
+    mock_check.assert_not_called()
+
+
+@pytest.mark.django_db(transaction=True)
+@mock.patch("apps.bedmages.services.check_bedmage_watches_for_character")
+@mock.patch("apps.characters.tasks.subprocess.run")
+def test_scrape_watched_characters_logs_but_continues_on_tracker_exception(
+    mock_run: mock.MagicMock,
+    mock_check: mock.MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Tracker exception caught and logged — scrape success metrics intact.
+
+    Defensive isolation: a bug in `apps.bedmages.services` must not bump the
+    `failed` counter (the scrape itself succeeded). Failure surfaces via
+    `logger.exception` for observability without polluting the Celery task
+    return value. Critical for production: tracker bugs would otherwise mask
+    real scrape problems in monitoring dashboards.
+    """
+    _make_stale_character("Yhral")
+    mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
+    mock_check.side_effect = RuntimeError("simulated tracker failure")
+
+    with caplog.at_level(logging.ERROR, logger="apps.characters.tasks"):
+        result = scrape_watched_characters.apply().get()
+
+    assert result == {"scraped": 1, "failed": 0, "skipped": 0}
+    assert any("bedmage check failed" in r.getMessage() for r in caplog.records)

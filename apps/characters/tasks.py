@@ -55,6 +55,19 @@ def scrape_watched_characters(self: Task) -> dict[str, int]:
         )
         if result.returncode == 0:
             scraped += 1
+            try:
+                character = Character.objects.get(name=name)
+                from apps.bedmages.services import (
+                    check_bedmage_watches_for_character,
+                )
+
+                check_bedmage_watches_for_character(character)
+            except Character.DoesNotExist:
+                logger.warning(
+                    "Character %s vanished mid-scrape, skipping bedmage check", name
+                )
+            except Exception:
+                logger.exception("bedmage check failed for character %s", name)
         else:
             failed += 1
             logger.warning(
