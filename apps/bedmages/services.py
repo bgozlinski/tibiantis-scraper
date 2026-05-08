@@ -7,6 +7,7 @@ from django.db import transaction
 from apps.bedmages.models import BedmageWatch
 from apps.characters.models import Character
 from apps.accounts.models import User
+from apps.notifications import get_bedmage_handler
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +65,6 @@ def check_bedmage_watches_for_character(character: Character) -> int:
     §4.5 design decision: scope = all watches for character (no further filtering).
 
     Returns count of watches that triggered notification (for logging/metrics).
-
-    D24 NOTE: handler dispatch is currently a placeholder logger.info() — D25 replaces
-    with `get_bedmage_handler().notify(watch)` from apps.notifications.
     """
     from django.conf import settings
 
@@ -79,6 +77,7 @@ def check_bedmage_watches_for_character(character: Character) -> int:
     if character.last_login > cutoff:
         return 0
 
+    handler = get_bedmage_handler()
     fired = 0
     watches = BedmageWatch.objects.filter(
         character=character, active=True
@@ -88,12 +87,16 @@ def check_bedmage_watches_for_character(character: Character) -> int:
         if watch.last_notified_login == character.last_login:
             continue
 
-        logger.info(
-            "BEDMAGE [STUB]: user=%s character=%s last_login=%s",
-            watch.user.username,
-            character.name,
-            character.last_login,
-        )
+        try:
+            handler.notify(watch)
+        except Exception:
+            logger.exception(
+                "Notification handler failed for watch user=%s character=%s",
+                watch.user.username,
+                character.name,
+            )
+            continue
+
         watch.last_notified_login = character.last_login
         watch.save(update_fields=["last_notified_login"])
         fired += 1

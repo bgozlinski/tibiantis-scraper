@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -148,12 +149,17 @@ def test_check_returns_zero_when_delta_below_threshold(user, character) -> None:
 
 @pytest.mark.django_db
 def test_check_fires_when_delta_above_threshold_and_not_yet_notified(
-    user, character, caplog: pytest.LogCaptureFixture
+    user, character
 ) -> None:
     """120 min >= 100 min threshold → fire once, set last_notified_login.
 
     Verifies the core invariant fire path AND the timezone arithmetic
     (would catch `from datetime import timezone` instead of django.utils).
+
+    Mocks the handler to avoid coupling to LoggingHandler's log format —
+    this test asserts behaviour (fired count + last_notified_login persisted),
+    not log strings. test_check_invokes_handler_when_delta_exceeds_threshold
+    explicitly verifies the handler is called.
     """
     BedmageWatch.objects.create(user=user, character=character)
     Character.objects.filter(pk=character.pk).update(
@@ -161,13 +167,12 @@ def test_check_fires_when_delta_above_threshold_and_not_yet_notified(
     )
     character.refresh_from_db()
 
-    with caplog.at_level(logging.INFO, logger="apps.bedmages"):
+    with patch("apps.bedmages.services.get_bedmage_handler", return_value=MagicMock()):
         fired = check_bedmage_watches_for_character(character)
 
     assert fired == 1
     watch = BedmageWatch.objects.get(user=user, character=character)
     assert watch.last_notified_login == character.last_login
-    assert any("BEDMAGE [STUB]" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.django_db
@@ -206,8 +211,67 @@ def test_check_filters_only_active_watches(user, character) -> None:
     )
     character.refresh_from_db()
 
-    fired = check_bedmage_watches_for_character(character)
+    with patch("apps.bedmages.services.get_bedmage_handler", return_value=MagicMock()):
+        fired = check_bedmage_watches_for_character(character)
 
     assert fired == 1
     inactive_watch = BedmageWatch.objects.get(user=user2, character=character)
     assert inactive_watch.last_notified_login is None
+
+
+# === D25 handler dispatch tests ===
+
+
+@pytest.mark.django_db
+def test_check_invokes_handler_when_delta_exceeds_threshold(user, character) -> None:
+    """Handler.notify is invoked exactly once per fired watch with the watch arg.
+
+    Verifies the dispatch contract — services.py routes through the resolved
+    handler, passing the BedmageWatch instance. The handler is mocked to keep
+    this test independent of LoggingHandler's log format.
+    """
+    BedmageWatch.objects.create(user=user, character=character)
+    Character.objects.filter(pk=character.pk).update(
+        last_login=timezone.now() - timedelta(minutes=120)
+    )
+    character.refresh_from_db()
+
+    mock_handler = MagicMock()
+    with patch("apps.bedmages.services.get_bedmage_handler", return_value=mock_handler):
+        fired = check_bedmage_watches_for_character(character)
+
+    assert fired == 1
+    assert mock_handler.notify.call_count == 1
+    called_watch = mock_handler.notify.call_args[0][0]
+    assert called_watch.user_id == user.pk
+    assert called_watch.character_id == character.pk
+
+
+@pytest.mark.django_db
+def test_check_does_not_set_last_notified_login_when_handler_raises(
+    user, character, caplog: pytest.LogCaptureFixture
+) -> None:
+    """If handler.notify raises, last_notified_login stays None — retry next scrape.
+
+    Critical invariant: a failing notification must NOT mark the watch as notified,
+    otherwise the user permanently misses that login's notification. Service wraps
+    handler.notify in try/except and `continue`s without setting last_notified_login.
+    Failure surface to logger.exception for observability.
+    """
+    BedmageWatch.objects.create(user=user, character=character)
+    Character.objects.filter(pk=character.pk).update(
+        last_login=timezone.now() - timedelta(minutes=120)
+    )
+    character.refresh_from_db()
+
+    mock_handler = MagicMock()
+    mock_handler.notify.side_effect = RuntimeError("simulated handler failure")
+
+    with patch("apps.bedmages.services.get_bedmage_handler", return_value=mock_handler):
+        with caplog.at_level(logging.ERROR, logger="apps.bedmages"):
+            fired = check_bedmage_watches_for_character(character)
+
+    assert fired == 0
+    watch = BedmageWatch.objects.get(user=user, character=character)
+    assert watch.last_notified_login is None
+    assert any("Notification handler failed" in r.getMessage() for r in caplog.records)
