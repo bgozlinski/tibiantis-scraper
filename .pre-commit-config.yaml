@@ -17,6 +17,8 @@ repos:
       - id: detect-private-key
       - id: mixed-line-ending
         args: [--fix=lf]
+      - id: no-commit-to-branch
+        args: [--branch, master]
 
   # Ruff (lint + format) — jedyny linter/formatter Pythona
   - repo: https://github.com/astral-sh/ruff-pre-commit
