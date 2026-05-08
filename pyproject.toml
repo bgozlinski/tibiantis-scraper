@@ -89,3 +89,11 @@ DJANGO_SETTINGS_MODULE = "config.settings.dev"
 python_files = ["test_*.py"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+omit = [
+    # TypedDict modules — fields are type hints, not executable at runtime.
+    # Coverage counts them as statements but they never execute, producing
+    # a false 0% reading. Exclude rather than fake-test type annotations.
+    "apps/*/types.py",
+]
