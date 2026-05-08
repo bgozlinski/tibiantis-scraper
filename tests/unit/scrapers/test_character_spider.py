@@ -212,7 +212,7 @@ def test_item_fields_match_model_fields() -> None:
     item_fields = set(CharacterItem.fields.keys())
     model_fields = {
         f.name
-        for f in Character._meta.get_fields()
+        for f in Character._meta.fields
         if f.name not in {"id", "last_scraped_at"}  # auto-managed, not scraped
     }
 
