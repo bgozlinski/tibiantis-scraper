@@ -180,7 +180,11 @@ LOGGING = {
         "apps": {
             "handlers": ["console", "mongo"],
             "level": "INFO",
-            "propagate": False,
+            # propagate=True so pytest caplog (LogCaptureHandler on root) keeps
+            # capturing records from apps.* loggers. No duplicate output in
+            # this project — root has no console/mongo handler, only the
+            # propagated record reaches pytest's capture.
+            "propagate": True,
         },
     },
 }
