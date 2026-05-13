@@ -159,3 +159,32 @@ BEDMAGE_NOTIFICATION_HANDLER = env(
     "BEDMAGE_NOTIFICATION_HANDLER",
     default="apps.notifications.handlers.LoggingHandler",
 )
+
+# MongoDB — used ONLY for app_logs / scrape_logs (CLAUDE.md §4).
+# Empty MONGO_URL disables Mongo logging gracefully via NullHandler (spec §3.4).
+MONGO_URL = env("MONGO_URL", default="")
+MONGO_DB = env("MONGO_DB", default="tibiantis_logs")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+        "mongo": {
+            "()": "logs_backend.handlers.factory_or_null",
+        },
+    },
+    "loggers": {
+        "apps": {
+            "handlers": ["console", "mongo"],
+            "level": "INFO",
+            # propagate=True so pytest caplog (LogCaptureHandler on root) keeps
+            # capturing records from apps.* loggers. No duplicate output in
+            # this project — root has no console/mongo handler, only the
+            # propagated record reaches pytest's capture.
+            "propagate": True,
+        },
+    },
+}
