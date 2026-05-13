@@ -20,7 +20,8 @@ requires-python = ">=3.13,<4.0"
       "django-choices-field (>=4.0.0,<5.0.0)",
       "celery (>=5.6.3,<6.0.0)",
       "redis (>=7.4.0,<8.0.0)",
-      "django-celery-beat (>=2.9.0,<3.0.0)"
+      "django-celery-beat (>=2.9.0,<3.0.0)",
+      "pymongo (>=4.17.0,<5.0.0)"
   ]
 
 
