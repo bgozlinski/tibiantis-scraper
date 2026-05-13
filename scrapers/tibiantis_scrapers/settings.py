@@ -19,3 +19,7 @@ ITEM_PIPELINES = {
 }
 
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
+
+EXTENSIONS = {
+    "scrapers.tibiantis_scrapers.extensions.MongoStatsExtension": 500,
+}
