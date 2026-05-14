@@ -56,6 +56,7 @@ LOCAL_APPS: list[str] = [
     "apps.deaths",
     "apps.bedmages",
     "apps.notifications",
+    "discord_bot",
 ]
 
 INSTALLED_APPS: list[str] = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
