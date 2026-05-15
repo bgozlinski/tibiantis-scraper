@@ -87,6 +87,10 @@ ignore_missing_imports = true
 module = ["discord", "discord.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["discord_bot.cogs.*"]
+disable_error_code = ["valid-type"]
+
 [tool.django-stubs]
 django_settings_module = "config.settings.stubs"
 
