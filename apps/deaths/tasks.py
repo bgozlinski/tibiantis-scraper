@@ -4,6 +4,7 @@ import sys
 import json
 
 from celery import shared_task, Task
+from apps.deaths.services import announce_unannounced_deaths
 
 
 logger = logging.getLogger(__name__)
@@ -47,4 +48,13 @@ def scrape_deaths(self: Task) -> dict[str, int]:
 
     summary["returncode"] = result.returncode
     logger.info("scrape_deaths: %s", summary)
+
+    try:
+        announce_summary = announce_unannounced_deaths()
+        summary.update(announce_summary)
+    except Exception:
+        logger.exception(
+            "announce_unannounced_deaths raised — events stay unannounced for next cycle"
+        )
+
     return summary
