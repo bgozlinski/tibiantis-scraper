@@ -36,11 +36,14 @@ async def on_application_command_error(
 
 
 def setup_bot() -> discord.Bot:
-    """Register cogs and return configured bot."""
-
+    """Register cogs and return configured bot. Idempotent — safe to call
+    multiple times (tests share the module-level bot singleton)."""
     from discord_bot.cogs.bedmages import BedmageCog
     from discord_bot.cogs.deaths import DeathsCog
 
-    bot.add_cog(BedmageCog(bot))
-    bot.add_cog(DeathsCog(bot))
+    if "BedmageCog" not in bot.cogs:
+        bot.add_cog(BedmageCog(bot))
+    if "DeathsCog" not in bot.cogs:
+        bot.add_cog(DeathsCog(bot))
+
     return bot
