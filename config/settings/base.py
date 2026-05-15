@@ -56,6 +56,7 @@ LOCAL_APPS: list[str] = [
     "apps.deaths",
     "apps.bedmages",
     "apps.notifications",
+    "apps.core",
     "discord_bot",
 ]
 
@@ -151,6 +152,8 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 60 * 30  # 30 min hard limit
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_SCRAPE_FRESHNESS_MINUTES = env.int("CELERY_SCRAPE_FRESHNESS_MINUTES", default=30)
+
+REDIS_URL = env("REDIS_URL")
 
 DEATH_LEVEL_THRESHOLD = env.int("DEATH_LEVEL_THRESHOLD", default=30)
 

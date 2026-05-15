@@ -28,6 +28,7 @@ os.environ.setdefault("DJANGO_SECRET_KEY", "stub-not-runtime")
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("CELERY_BROKER_URL", "memory://")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("DJANGO_DEBUG", "False")
 os.environ.setdefault("DJANGO_ALLOWED_HOSTS", "")
 
