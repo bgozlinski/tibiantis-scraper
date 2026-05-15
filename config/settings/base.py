@@ -187,5 +187,16 @@ LOGGING = {
             # propagated record reaches pytest's capture.
             "propagate": True,
         },
+        "discord_bot": {
+            "handlers": ["console", "mongo"],
+            "level": "INFO",
+            "propagate": True,
+        },
     },
 }
+
+# Discord bot
+DISCORD_BOT_TOKEN = env("DISCORD_BOT_TOKEN", default="")
+
+_dev_guild_raw = env("DISCORD_DEV_GUILD_ID", default="")
+DISCORD_DEV_GUILD_ID = int(_dev_guild_raw) if _dev_guild_raw else 0
