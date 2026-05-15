@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from apps.notifications import get_bedmage_handler
-from apps.notifications.handlers import LoggingHandler
+from apps.notifications.handlers import DiscordDMHandler, LoggingHandler
 
 
 class MockHandler:
@@ -24,15 +24,17 @@ class MockHandler:
         pass
 
 
-def test_get_bedmage_handler_returns_logging_handler_by_default() -> None:
-    """Default settings.BEDMAGE_NOTIFICATION_HANDLER points at LoggingHandler.
+def test_get_bedmage_handler_returns_discord_dm_handler_by_default() -> None:
+    """Default settings.BEDMAGE_NOTIFICATION_HANDLER points at DiscordDMHandler.
 
-    Sanity check that the project default (declared in config/settings/base.py)
-    resolves to the M5 reference implementation.
+    M5 originally pointed at LoggingHandler (dev/test); M8-D37 flipped the
+    default to the production DiscordDMHandler so deployed instances actually
+    send DMs without env var override. LoggingHandler is still importable and
+    used by tests that need a side-effect-free notify implementation.
     """
     handler = get_bedmage_handler()
 
-    assert isinstance(handler, LoggingHandler)
+    assert isinstance(handler, DiscordDMHandler)
 
 
 def test_get_bedmage_handler_resolves_custom_class_via_settings(settings) -> None:
