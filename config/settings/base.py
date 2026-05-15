@@ -199,3 +199,8 @@ DISCORD_BOT_TOKEN = env("DISCORD_BOT_TOKEN", default="")
 
 _dev_guild_raw = env("DISCORD_DEV_GUILD_ID", default="")
 DISCORD_DEV_GUILD_ID = int(_dev_guild_raw) if _dev_guild_raw else 0
+
+DEATH_NOTIFICATION_HANDLER = env(
+    "DEATH_NOTIFICATION_HANDLER",
+    default="apps.notifications.handlers.DiscordChannelHandler",
+)

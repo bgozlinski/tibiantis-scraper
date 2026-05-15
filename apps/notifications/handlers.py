@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Protocol
-
+from typing import TYPE_CHECKING, Protocol, Any
 
 if TYPE_CHECKING:
     from apps.bedmages.models import BedmageWatch
+    from apps.deaths.models import DeathEvent
+    from discord_bot.models import DiscordChannel
 
 logger = logging.getLogger(__name__)
 
@@ -73,3 +74,54 @@ class DiscordDMHandler:
             f"{settings.BEDMAGE_REGEN_MINUTES} minutes — mana fully regenerated.\n"
             f"Last login: {watch.character.last_login:%Y-%m-%d %H:%M UTC}"
         )
+
+
+class DeathAnnouncementHandler(Protocol):
+    """Protocol for death announcement handlers.
+
+    Implementations swap via settings.DEATH_NOTIFICATION_HANDLER (dotted path).
+    """
+
+    def announce(
+        self, death_event: DeathEvent, discord_channel: DiscordChannel
+    ) -> bool: ...
+
+
+class DiscordChannelHandler:
+    """Implements DeathAnnouncementHandler. Posts embed to per-guild channel."""
+
+    def announce(
+        self, death_event: DeathEvent, discord_channel: DiscordChannel
+    ) -> bool:
+        from apps.notifications.discord_client import DiscordRESTClient
+
+        client = DiscordRESTClient()
+        embed = self._render_embed(death_event)
+        return client.send_channel_message(
+            channel_id=discord_channel.channel_id,
+            embed=embed,
+        )
+
+    def _render_embed(self, death_event: DeathEvent) -> dict[str, Any]:
+        return {
+            "title": f"💀 {death_event.character_name} (level {death_event.level_at_death})",
+            "description": death_event.killed_by or "Cause unknown",
+            "timestamp": death_event.died_at.isoformat(),
+            "color": 0xDC143C,  # crimson
+        }
+
+
+class DeathLoggingHandler:
+    """Test/dev variant — logs only, no Discord call."""
+
+    def announce(
+        self, death_event: DeathEvent, discord_channel: DiscordChannel
+    ) -> bool:
+        logger.info(
+            "DEATH ANNOUNCE: %s (lvl %s) → guild=%s channel=%s",
+            death_event.character_name,
+            death_event.level_at_death,
+            discord_channel.guild_id,
+            discord_channel.channel_id,
+        )
+        return True
