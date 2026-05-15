@@ -25,4 +25,5 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/", include("apps.accounts.api.urls")),
     path("graphql/", csrf_exempt(JWTAsyncGraphQLView.as_view(schema=schema))),
+    path("health/", include("apps.core.urls")),
 ]

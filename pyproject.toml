@@ -89,6 +89,10 @@ module = ["discord", "discord.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["redis", "redis.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["discord_bot.cogs.*"]
 disable_error_code = ["valid-type"]
 
