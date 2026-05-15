@@ -155,10 +155,9 @@ CELERY_SCRAPE_FRESHNESS_MINUTES = env.int("CELERY_SCRAPE_FRESHNESS_MINUTES", def
 DEATH_LEVEL_THRESHOLD = env.int("DEATH_LEVEL_THRESHOLD", default=30)
 
 BEDMAGE_REGEN_MINUTES = env.int("BEDMAGE_REGEN_MINUTES", default=100)
-
 BEDMAGE_NOTIFICATION_HANDLER = env(
     "BEDMAGE_NOTIFICATION_HANDLER",
-    default="apps.notifications.handlers.LoggingHandler",
+    default="apps.notifications.handlers.DiscordDMHandler",  # M5 LoggingHandler → M8 DiscordDMHandler
 )
 
 # MongoDB — used ONLY for app_logs / scrape_logs (CLAUDE.md §4).

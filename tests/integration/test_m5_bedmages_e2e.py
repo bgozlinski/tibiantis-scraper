@@ -5,9 +5,11 @@ threshold → invoke check_bedmage_watches_for_character → verify the configur
 notification handler was called once with the correct watch. Second invocation
 must be a no-op (idempotency invariant from CLAUDE.md §7).
 
-Mocks `LoggingHandler.notify` — the M5 default handler. Doesn't go through
-the GraphQL layer (the unit tests cover that boundary); this verifies the
-business-logic chain D24+D25 wires up end-to-end.
+Mocks `LoggingHandler.notify` and overrides BEDMAGE_NOTIFICATION_HANDLER to
+pin LoggingHandler as the resolved handler — without the override M8-D37
+flipped the project default to DiscordDMHandler, and patching LoggingHandler
+would no longer intercept the call. The test stays focused on the M5 wiring
+contract, isolated from whichever production handler M8+ resolves to.
 """
 
 from __future__ import annotations
@@ -28,7 +30,10 @@ from apps.characters.models import Character
 
 
 @pytest.mark.django_db(transaction=True)
-@override_settings(BEDMAGE_REGEN_MINUTES=100)
+@override_settings(
+    BEDMAGE_REGEN_MINUTES=100,
+    BEDMAGE_NOTIFICATION_HANDLER="apps.notifications.handlers.LoggingHandler",
+)
 @mock.patch("apps.notifications.handlers.LoggingHandler.notify")
 def test_e2e_add_bedmage_watch_then_check_fires_handler(
     mock_notify: mock.MagicMock,
