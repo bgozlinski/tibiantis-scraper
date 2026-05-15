@@ -1,13 +1,17 @@
-"""Tests for discord_bot.services — user auto-create + threshold upsert."""
+"""Tests for discord_bot.services — user auto-create + threshold upsert + bedmage wrappers."""
 
 from __future__ import annotations
 
 import pytest
 
 from apps.accounts.models import User
+from apps.bedmages.models import BedmageWatch
 from discord_bot.models import DiscordChannel
 from discord_bot.services import (
+    add_bedmage_for_discord_user,
     get_or_create_user_by_discord_id,
+    list_bedmages_for_discord_user,
+    remove_bedmage_for_discord_user,
     set_death_threshold_for_guild,
 )
 
@@ -122,3 +126,152 @@ def test_set_death_threshold_updates_channel_id_when_changed() -> None:
 
     assert updated.channel_id == 200
     assert DiscordChannel.objects.filter(guild_id=42).count() == 1
+
+
+# === add_bedmage_for_discord_user (D33) ===
+
+
+@pytest.mark.django_db
+def test_add_bedmage_for_discord_user_creates_watch_on_first_call() -> None:
+    """First `/bedmage add` for a Discord user materializes User + BedmageWatch.
+
+    Auto-create User via the D31 service, then delegate to M5
+    `add_bedmage_watch` — Character is also lazily created (M5 contract).
+    """
+    watch, created = add_bedmage_for_discord_user(
+        discord_id=42, discord_username="alice", character_name="Yhral"
+    )
+
+    assert created is True
+    assert watch.pk is not None
+    assert watch.active is True
+    assert watch.character.name == "Yhral"
+    assert User.objects.filter(discord_id="42", pk=watch.user_id).exists()
+
+
+@pytest.mark.django_db
+def test_add_bedmage_for_discord_user_returns_existing_on_duplicate() -> None:
+    """Idempotent UX (§3.2): second add for same (user, character) → (existing, False).
+
+    Wrapper catches M5's `ValueError` and re-fetches the row instead of
+    surfacing the error to Discord — "already on list" is informational, not
+    a failure from the user's perspective.
+    """
+    first, first_created = add_bedmage_for_discord_user(
+        discord_id=42, discord_username="alice", character_name="Yhral"
+    )
+    second, second_created = add_bedmage_for_discord_user(
+        discord_id=42, discord_username="alice", character_name="Yhral"
+    )
+
+    assert first_created is True
+    assert second_created is False
+    assert second.pk == first.pk
+    assert (
+        BedmageWatch.objects.filter(user=first.user, character=first.character).count()
+        == 1
+    )
+
+
+# === remove_bedmage_for_discord_user (D33) ===
+
+
+@pytest.mark.django_db
+def test_remove_bedmage_for_discord_user_returns_true_on_match() -> None:
+    """Happy path — watch exists and is hard-deleted; service returns True."""
+    add_bedmage_for_discord_user(
+        discord_id=42, discord_username="alice", character_name="Yhral"
+    )
+
+    removed = remove_bedmage_for_discord_user(discord_id=42, character_name="Yhral")
+
+    assert removed is True
+    assert (
+        BedmageWatch.objects.filter(
+            user__discord_id="42", character__name="Yhral"
+        ).count()
+        == 0
+    )
+
+
+@pytest.mark.django_db
+def test_remove_bedmage_for_discord_user_returns_false_when_not_on_list() -> None:
+    """No-match case — idempotent (§3.2): never raises, returns False.
+
+    Covers two scenarios in one assertion: unknown user (auto-created) AND
+    unknown character. Both paths return False without crashing.
+    """
+    removed = remove_bedmage_for_discord_user(
+        discord_id=42, character_name="NeverAdded"
+    )
+
+    assert removed is False
+
+
+@pytest.mark.django_db
+def test_remove_bedmage_for_discord_user_auto_creates_user_when_unknown() -> None:
+    """Pułapka G — symmetric with `add`: removing for an unknown Discord user
+    auto-creates the User row (idempotent + symmetric behavior with `add`).
+
+    Defensive against UX inconsistency: `/bedmage remove` from a brand-new
+    user shouldn't behave differently from `/bedmage add` followed by remove.
+    """
+    assert User.objects.filter(discord_id="999").count() == 0
+
+    remove_bedmage_for_discord_user(discord_id=999, character_name="Anything")
+
+    assert User.objects.filter(discord_id="999").count() == 1
+
+
+# === list_bedmages_for_discord_user (D33) ===
+
+
+@pytest.mark.django_db
+def test_list_bedmages_for_discord_user_returns_empty_for_unknown_user() -> None:
+    """Pułapka H — read-only: unknown Discord ID returns [], does NOT auto-create.
+
+    Defense against unnecessary DB writes on idle `/bedmage list` calls.
+    """
+    watches = list_bedmages_for_discord_user(discord_id=99999)
+
+    assert watches == []
+    assert User.objects.filter(discord_id="99999").count() == 0
+
+
+@pytest.mark.django_db
+def test_list_bedmages_for_discord_user_returns_active_watches() -> None:
+    """Returns all active bedmages for the user, with Character preloaded.
+
+    `select_related("character")` guards against N+1 in the cog handler when
+    it formats `w.character.name` for each watch.
+    """
+    add_bedmage_for_discord_user(
+        discord_id=42, discord_username="alice", character_name="Yhral"
+    )
+    add_bedmage_for_discord_user(
+        discord_id=42, discord_username="alice", character_name="Nidrak"
+    )
+
+    watches = list_bedmages_for_discord_user(discord_id=42)
+
+    assert len(watches) == 2
+    assert {w.character.name for w in watches} == {"Yhral", "Nidrak"}
+
+
+@pytest.mark.django_db
+def test_list_bedmages_for_discord_user_excludes_inactive() -> None:
+    """`active=True` filter — soft-deactivated watches are not surfaced.
+
+    M5 `remove_bedmage_watch` is hard-delete so this path is currently dead
+    code, but the filter is a contract guarantee for future soft-delete
+    refactors (§3.2 wrapper isolation from M5 internals).
+    """
+    watch, _ = add_bedmage_for_discord_user(
+        discord_id=42, discord_username="alice", character_name="Yhral"
+    )
+    watch.active = False
+    watch.save(update_fields=["active"])
+
+    watches = list_bedmages_for_discord_user(discord_id=42)
+
+    assert watches == []

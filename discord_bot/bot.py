@@ -37,4 +37,7 @@ async def on_application_command_error(
 
 def setup_bot() -> discord.Bot:
     """Add cogs and return configured bot. D32: no cogs yet (D33+D34 add them)."""
+    from discord_bot.cogs.bedmages import BedmageCog
+
+    bot.add_cog(BedmageCog(bot))
     return bot

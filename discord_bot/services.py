@@ -7,6 +7,9 @@ from django.db import transaction
 from apps.accounts.models import User
 from discord_bot.models import DiscordChannel
 
+from apps.bedmages.models import BedmageWatch
+from apps.bedmages.services import add_bedmage_watch, remove_bedmage_watch
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,3 +59,41 @@ def set_death_threshold_for_guild(
         threshold,
     )
     return channel
+
+
+def add_bedmage_for_discord_user(
+    discord_id: int, discord_username: str, character_name: str
+) -> tuple[BedmageWatch, bool]:
+    """Auto-create User + delegate to apps.bedmages.services.add_bedmage_watch.
+
+    Returns (watch, created). created=False when watch already on user's list
+    (catches ValueError from apps service, idempotent ack).
+    """
+    user, _ = get_or_create_user_by_discord_id(discord_id, discord_username)
+    try:
+        watch = add_bedmage_watch(user, character_name)
+        return watch, True
+    except ValueError:
+        watch = BedmageWatch.objects.get(user=user, character__name=character_name)
+        return watch, False
+
+
+def remove_bedmage_for_discord_user(discord_id: int, character_name: str) -> bool:
+    """Auto-create User + delegate to apps.bedmages.services.remove_bedmage_watch.
+
+    Returns True if watch existed and was deleted, False otherwise.
+    Idempotent — never raises.
+    """
+    user, _ = get_or_create_user_by_discord_id(discord_id, discord_username="")
+    return remove_bedmage_watch(user, character_name)
+
+
+def list_bedmages_for_discord_user(discord_id: int) -> list[BedmageWatch]:
+    """Active bedmages for user. Empty list if user unknown (no auto-create on read)."""
+    try:
+        user = User.objects.get(discord_id=discord_id)
+    except User.DoesNotExist:
+        return []
+    return list(
+        BedmageWatch.objects.filter(user=user, active=True).select_related("character")
+    )
