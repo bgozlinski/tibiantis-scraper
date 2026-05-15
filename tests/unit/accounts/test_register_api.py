@@ -68,3 +68,69 @@ def test_register_rejects_numeric_only_password() -> None:
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "password" in response.data
     assert not User.objects.filter(username="yhral").exists()
+
+
+@pytest.mark.django_db
+def test_register_rejects_missing_email() -> None:
+    """Regression guard for #133: model `email` is `null=True, blank=True` so that
+    Discord auto-create can store NULL. ModelSerializer derives field metadata
+    from the model — without an explicit override the REST register endpoint
+    would silently accept signups with no `email` key at all. This test pins
+    `required=True` on the serializer override so REST signups stay strict
+    even though the underlying model column allows NULL.
+    """
+    client = APIClient()
+    payload = {
+        "username": "yhral",
+        "password": "KomplexHaslo!23",
+    }  # email omitted
+
+    response = client.post(reverse("accounts_api:register"), payload, format="json")
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "email" in response.data
+    assert not User.objects.filter(username="yhral").exists()
+
+
+@pytest.mark.django_db
+def test_register_rejects_empty_email() -> None:
+    """Sibling of the missing-email guard: empty string must also be rejected.
+
+    Since model is now `blank=True`, ModelSerializer's auto-derived field would
+    allow ''. This test pins `allow_blank=False` on the serializer override
+    so registered users always have a real, non-empty address.
+    """
+    client = APIClient()
+    payload = {
+        "username": "yhral",
+        "email": "",
+        "password": "KomplexHaslo!23",
+    }
+
+    response = client.post(reverse("accounts_api:register"), payload, format="json")
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "email" in response.data
+    assert not User.objects.filter(username="yhral").exists()
+
+
+@pytest.mark.django_db
+def test_register_rejects_null_email() -> None:
+    """Third sibling: explicit JSON `null` must also be rejected.
+
+    Since model is now `null=True`, ModelSerializer's auto-derived field would
+    allow None. This test pins `allow_null=False` on the serializer override —
+    web signups always have an email even though Discord auto-creates don't.
+    """
+    client = APIClient()
+    payload = {
+        "username": "yhral",
+        "email": None,
+        "password": "KomplexHaslo!23",
+    }
+
+    response = client.post(reverse("accounts_api:register"), payload, format="json")
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "email" in response.data
+    assert not User.objects.filter(username="yhral").exists()
