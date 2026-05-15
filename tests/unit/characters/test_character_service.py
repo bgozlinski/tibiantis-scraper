@@ -102,3 +102,49 @@ def test_upsert_propagates_integrity_error_after_single_retry() -> None:
             upsert_character({"name": "Yhral", "level": 41})
 
         assert mock_uoc.call_count == 2
+
+
+@pytest.mark.django_db
+def test_upsert_accepts_none_house_and_guild_membership() -> None:
+    """Regression #139 — characters without house AND without guild membership
+    (typical for low-level accounts on Tibiantis) reach the pipeline with
+    `house=None` and `guild_membership=None`. Pre-fix the model rejected NULL
+    on these columns and the whole INSERT rolled back, leaving Character with
+    all defaults. Migration 0004 made both fields nullable; this test exercises
+    the full path (real ORM, real DB) so the column-level constraint stays
+    NULL-tolerant going forward.
+
+    Reproduces the exact failure mode from M8 manual smoke for `Akrutki`
+    (level 12 Sorcerer): spider parsed every other field correctly, pipeline
+    forwarded the dict to upsert_character, and PostgreSQL raised
+    `NOT NULL constraint violation`. With the fix this test must persist a
+    row with `house IS NULL`, `guild_membership IS NULL`, and every other
+    field populated as supplied.
+    """
+    from datetime import datetime, timezone
+
+    character = upsert_character(
+        {
+            "name": "Akrutki",
+            "sex": "female",
+            "vocation": "Sorcerer",
+            "level": 12,
+            "world": "Concordia",
+            "residence": "Thais",
+            "house": None,
+            "guild_membership": None,
+            "last_login": datetime(2026, 5, 15, 10, 43, 31, tzinfo=timezone.utc),
+            "account_status": "Premium Account",
+        }
+    )
+
+    assert character.pk is not None
+    character.refresh_from_db()
+    assert character.house is None
+    assert character.guild_membership is None
+    # rest of the payload must be persisted — pre-fix the entire INSERT rolled back
+    assert character.name == "Akrutki"
+    assert character.level == 12
+    assert character.vocation == "Sorcerer"
+    assert character.last_login is not None
+    assert character.account_status == "Premium Account"

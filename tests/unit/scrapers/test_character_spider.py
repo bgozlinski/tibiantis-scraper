@@ -140,6 +140,59 @@ def test_parse_high_level_character_with_long_guild() -> None:
     )  # stays within Character.guild_membership max_length
 
 
+def test_parse_low_level_character_without_house_or_guild_yields_none() -> None:
+    """Regression #139 — Tibiantis omits the `House:` and `Guild Membership:`
+    rows entirely for characters that have neither (typical for low-level
+    accounts). Spider must yield `None` for those fields, and the
+    Character model column must accept NULL.
+
+    Pre-fix scenario (caught in M8 manual smoke for `Akrutki` level 12):
+    the spider's `data.get("House")` returned `None` (key absent in the
+    parsed table), the pipeline forwarded it to `upsert_character`, and
+    PostgreSQL rejected the INSERT with `NOT NULL constraint violation` —
+    every other field of the row was silently rolled back, leaving the
+    Character row with all defaults and `last_login=None`.
+
+    The fix has two parts: model migration 0004 made both columns nullable,
+    and this test pins the spider half of the contract (None passes through
+    to the item, not coerced to "").
+
+    The pre-existing `test_parse_character_never_logged_handles_gracefully`
+    test covered the case where the rows are present with empty string
+    values — different bug, both need separate regression guards.
+    """
+    rows = {
+        "Name": "Akrutki",
+        "Sex": "female",
+        "Vocation": "Sorcerer",
+        "Level": "12",
+        "World": "Concordia",
+        "Residence": "Thais",
+        # House: omitted — real Tibiantis pages skip the row entirely
+        # Guild Membership: omitted — same
+        "Last Login": "15 May 2026 10:43:31 CEST",
+        "Account Status": "Premium Account",
+    }
+    response = HtmlResponse(
+        url="https://tibiantis.online/?page=character&name=Akrutki",
+        body=_build_character_html(rows),
+        encoding="utf-8",
+    )
+    spider = CharacterSpider(name="Akrutki")
+
+    items = list(spider.parse(response))
+
+    assert len(items) == 1
+    item = items[0]
+    assert item["house"] is None
+    assert item["guild_membership"] is None
+    # other fields still parse — fix is targeted, not a broader regression
+    assert item["name"] == "Akrutki"
+    assert item["level"] == 12
+    assert item["vocation"] == "Sorcerer"
+    assert item["account_status"] == "Premium Account"
+
+
 def test_parse_character_never_logged_handles_gracefully() -> None:
     """Fresh characters have `Last Login: Never logged in` — spider must not crash.
 
