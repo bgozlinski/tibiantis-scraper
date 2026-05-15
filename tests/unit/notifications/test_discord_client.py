@@ -174,6 +174,72 @@ def test_client_retries_once_on_5xx(mock_httpx: MockHttpx) -> None:
     assert len(mock_httpx.requests) == 2
 
 
+def test_send_channel_message_wraps_embed_in_embeds_list(
+    mock_httpx: MockHttpx,
+) -> None:
+    """Embed payload is wrapped in `embeds: [...]` (list of dicts, not bare dict).
+
+    Pins the Discord REST contract — the API expects `embeds` (plural, array)
+    even for a single embed. Without the wrap, Discord rejects the request as
+    "embed must be an object" and DiscordChannelHandler silently fails. Test
+    locks the wire-format shape that D38 `DiscordChannelHandler` depends on.
+    """
+    mock_httpx.set_handler(lambda _r: httpx.Response(200, json={"id": "msg_1"}))
+
+    client = DiscordRESTClient(bot_token="fake-token")
+    embed = {"title": "💀 Yhral", "color": 0xDC143C}
+    ok = client.send_channel_message(channel_id=42, embed=embed)
+
+    assert ok is True
+    request = mock_httpx.requests[0]
+    assert b'"embeds":[{"title"' in request.content
+    assert b'"content"' not in request.content  # bare embed call, no content
+
+
+def test_post_returns_none_when_bot_token_empty(
+    mock_httpx: MockHttpx, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Empty bot_token short-circuits BEFORE any HTTP request — defensive guard.
+
+    Catches the misconfigured-env case (DISCORD_BOT_TOKEN missing from .env
+    in prod): we log an ERROR and return None instead of attempting an
+    unauthenticated request that would surface as a 401 deeper in the stack.
+    `mock_httpx` fixture asserts the contract by remaining empty — zero
+    outbound requests confirms the early return path.
+    """
+    import logging
+
+    # `__init__` does `bot_token or settings.DISCORD_BOT_TOKEN`, so we set the
+    # attribute directly after construction to bypass the settings fallback.
+    client = DiscordRESTClient(bot_token="placeholder")
+    client.bot_token = ""
+
+    with caplog.at_level(logging.ERROR, logger="apps.notifications.discord_client"):
+        ok = client.send_channel_message(channel_id=42, content="hi")
+
+    assert ok is False
+    assert len(mock_httpx.requests) == 0
+    assert any("DISCORD_BOT_TOKEN empty" in r.getMessage() for r in caplog.records)
+
+
+def test_client_gives_up_after_second_5xx(mock_httpx: MockHttpx) -> None:
+    """5xx on BOTH attempts → returns False (None from `_post`).
+
+    Locks the "exactly 1 retry on 5xx" contract — after the retry also fails
+    we don't loop forever. Counterpart to `test_client_retries_once_on_5xx`
+    which proves we DO retry once; this proves we DON'T retry twice.
+    Downstream (D38 `DiscordChannelHandler`, D37 `DiscordDMHandler`) relies
+    on the False return to log a WARNING and skip marking-as-announced.
+    """
+    mock_httpx.set_handler(lambda _r: httpx.Response(503, json={}))
+
+    client = DiscordRESTClient(bot_token="fake-token")
+    ok = client.send_channel_message(channel_id=42, content="hi")
+
+    assert ok is False
+    assert len(mock_httpx.requests) == 2  # initial + 1 retry, no more
+
+
 def test_client_respects_retry_after_on_429(
     mock_httpx: MockHttpx, monkeypatch: pytest.MonkeyPatch
 ) -> None:
