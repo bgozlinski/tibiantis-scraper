@@ -104,6 +104,79 @@ def test_returncode_nonzero_logs_warning_and_returns_summary(
     with caplog.at_level(logging.WARNING, logger="apps.deaths.tasks"):
         result = scrape_deaths.apply().get()
 
-    assert result == {"yielded": 50, "duplicates": 50, "returncode": 1}
+    assert "yielded" in result and "duplicates" in result and "returncode" in result
+    assert result["yielded"] == 50
+    assert result["duplicates"] == 50
+    assert result["returncode"] == 1
     task_warnings = [r for r in caplog.records if r.name == "apps.deaths.tasks"]
     assert any("returncode=1" in r.message for r in task_warnings)
+
+
+@mock.patch("apps.deaths.tasks.announce_unannounced_deaths")
+@mock.patch("apps.deaths.tasks.subprocess.run")
+def test_scrape_deaths_calls_announce_after_subprocess_and_merges_summary(
+    mock_run: mock.MagicMock,
+    mock_announce: mock.MagicMock,
+) -> None:
+    """M8-D39 wiring: after scrape subprocess completes, the task calls
+    `announce_unannounced_deaths()` and merges its summary into the task
+    return value via `dict.update()`.
+
+    Pins two contract points: (1) order — announce runs AFTER subprocess parse
+    so it only sees events the current scrape persisted, (2) shape — task
+    return is the union of scrape keys (yielded/duplicates/returncode) and
+    announce keys (events_announced/events_skipped/fail_count), backward
+    compatible with M4 task consumers (Pułapka F from #131).
+    """
+    mock_run.return_value = _completed(
+        stdout='{"yielded": 5, "duplicates": 0}', returncode=0
+    )
+    mock_announce.return_value = {
+        "events_announced": 2,
+        "events_skipped": 1,
+        "fail_count": 0,
+    }
+
+    result = scrape_deaths.apply().get()
+
+    assert result == {
+        "yielded": 5,
+        "duplicates": 0,
+        "returncode": 0,
+        "events_announced": 2,
+        "events_skipped": 1,
+        "fail_count": 0,
+    }
+    mock_announce.assert_called_once_with()
+
+
+@mock.patch("apps.deaths.tasks.announce_unannounced_deaths")
+@mock.patch("apps.deaths.tasks.subprocess.run")
+def test_scrape_deaths_swallows_announce_exception_and_returns_scrape_summary(
+    mock_run: mock.MagicMock,
+    mock_announce: mock.MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Defensive try/except around announce in tasks.py: if the announce phase
+    raises (DB connection lost, unexpected handler bug), the task still
+    returns the scrape summary so Celery doesn't mark the task as failed and
+    Beat keeps firing the next cycle.
+
+    Locks Pułapka F's symmetric concern — announce failure must NOT tank
+    the scrape return value, and a logger.exception entry must record it.
+    """
+    mock_run.return_value = _completed(
+        stdout='{"yielded": 3, "duplicates": 1}', returncode=0
+    )
+    mock_announce.side_effect = RuntimeError("DB down")
+
+    with caplog.at_level(logging.ERROR, logger="apps.deaths.tasks"):
+        result = scrape_deaths.apply().get()
+
+    # scrape summary preserved; announce keys absent (update() never ran)
+    assert result == {"yielded": 3, "duplicates": 1, "returncode": 0}
+    assert any(
+        "announce_unannounced_deaths raised" in r.message
+        for r in caplog.records
+        if r.name == "apps.deaths.tasks"
+    )

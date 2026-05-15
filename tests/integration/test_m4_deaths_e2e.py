@@ -72,15 +72,25 @@ def test_e2e_first_scrape_creates_50_deaths_second_scrape_dedups(
     Asserts BOTH counters in both rounds (M3 retro #61 lesson — single-counter
     asserts let counter swap bugs slip through) AND DB row count remains stable
     after round 2 (true idempotency, not just "duplicates reported correctly").
+
+    M8-D39 note: scrape_deaths return shape was extended with the announce
+    summary (events_announced/events_skipped/fail_count). The M4 contract this
+    test guards is the scrape counters — assertions are subset-style so future
+    additions to the task return dict don't break this regression guard
+    (Pułapka F from #131 — keys added, never removed).
     """
     # Round 1 — fresh DB, all 50 inserted
     result1 = scrape_deaths.apply().get()
-    assert result1 == {"yielded": 50, "duplicates": 0, "returncode": 0}
+    assert result1["yielded"] == 50
+    assert result1["duplicates"] == 0
+    assert result1["returncode"] == 0
     assert DeathEvent.objects.count() == 50
 
     # Round 2 — same fixture, full dedup, count stable
     result2 = scrape_deaths.apply().get()
-    assert result2 == {"yielded": 50, "duplicates": 50, "returncode": 0}
+    assert result2["yielded"] == 50
+    assert result2["duplicates"] == 50
+    assert result2["returncode"] == 0
     assert DeathEvent.objects.count() == 50
 
     assert mock_run.call_count == 2
