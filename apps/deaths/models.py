@@ -7,6 +7,7 @@ class DeathEvent(models.Model):
     killed_by = models.TextField(blank=True, default="")
     died_at = models.DateTimeField(db_index=True)
     scraped_at = models.DateTimeField(auto_now_add=True)
+    announced_on_discord = models.BooleanField(default=False, db_index=True)
 
     class Meta:
         ordering = ["-died_at"]

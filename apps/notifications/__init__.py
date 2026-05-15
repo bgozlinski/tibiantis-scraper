@@ -3,7 +3,10 @@ from typing import cast
 from django.conf import settings
 from django.utils.module_loading import import_string
 
-from apps.notifications.handlers import BedmageNotificationHandler
+from apps.notifications.handlers import (
+    BedmageNotificationHandler,
+    DeathAnnouncementHandler,
+)
 
 
 def get_bedmage_handler() -> BedmageNotificationHandler:
@@ -15,3 +18,8 @@ def get_bedmage_handler() -> BedmageNotificationHandler:
     """
     handler_class = import_string(settings.BEDMAGE_NOTIFICATION_HANDLER)
     return cast(BedmageNotificationHandler, handler_class())
+
+
+def get_death_handler() -> DeathAnnouncementHandler:  # NEW M8
+    handler_class = import_string(settings.DEATH_NOTIFICATION_HANDLER)
+    return cast(DeathAnnouncementHandler, handler_class())
