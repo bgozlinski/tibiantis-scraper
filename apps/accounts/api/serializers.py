@@ -9,6 +9,8 @@ from apps.accounts.models import User
 
 
 class RegisterSerializer(serializers.ModelSerializer[User]):
+    email = serializers.EmailField(required=True, allow_null=False, allow_blank=False)
+
     class Meta:
         model = User
         fields = [

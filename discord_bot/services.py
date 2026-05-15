@@ -26,7 +26,7 @@ def get_or_create_user_by_discord_id(
             discord_id=discord_id,
             defaults={
                 "username": f"discord_{discord_id}",
-                "email": "",
+                "email": None,
             },
         )
         if created:

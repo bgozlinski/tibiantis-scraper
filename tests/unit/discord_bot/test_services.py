@@ -24,7 +24,8 @@ def test_get_or_create_user_creates_new_user_with_discord_username_pattern() -> 
     """First call materializes Django User per CLAUDE.md §8 auto-create default.
 
     Locks the auto-create contract: username pattern `discord_<id>` (collision-safe
-    with web signups), empty email (Discord doesn't always expose), unusable
+    with web signups), NULL email (Discord doesn't always expose — NULL not ''
+    so the unique constraint allows N Discord users; see #133), unusable
     password (account only logs in via Discord, not Django auth).
     """
     assert User.objects.filter(discord_id="12345").count() == 0
@@ -35,11 +36,35 @@ def test_get_or_create_user_creates_new_user_with_discord_username_pattern() -> 
 
     assert created is True
     assert user.username == "discord_12345"
-    assert user.email == ""
+    assert user.email is None
     assert user.has_usable_password() is False
 
     user.refresh_from_db()
     assert user.discord_id == "12345"
+
+
+@pytest.mark.django_db
+def test_get_or_create_user_does_not_collide_on_email_for_different_discord_ids() -> (
+    None
+):
+    """Regression #133: pre-fix, the second Discord auto-create exploded with
+    `IntegrityError: duplicate key value violates unique constraint
+    "accounts_user_email_..." Key (email)=() already exists` because `email=''`
+    was being inserted twice into a unique column.
+
+    After the fix `email` is NULL on auto-create. PostgreSQL treats multiple
+    NULLs in a unique column as distinct, so any number of Discord users can
+    be materialized lazily. Without this test the original bug would silently
+    return if someone reverts the model nullability or the services.py default
+    back to `""`.
+    """
+    u1, c1 = get_or_create_user_by_discord_id(discord_id=111, discord_username="alice")
+    u2, c2 = get_or_create_user_by_discord_id(discord_id=222, discord_username="bob")
+
+    assert c1 is True and c2 is True
+    assert u1.pk != u2.pk
+    assert u1.email is None and u2.email is None
+    assert User.objects.filter(email__isnull=True).count() == 2
 
 
 @pytest.mark.django_db
