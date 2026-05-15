@@ -1,5 +1,6 @@
-from __future__ import annotations
-
+# NOTE: NO `from __future__ import annotations` here — py-cord introspects
+# parameter annotations at slash command invocation time and requires them
+# as runtime objects, not PEP 563 strings.
 from asgiref.sync import sync_to_async
 import discord
 from discord.ext import commands
