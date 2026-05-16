@@ -20,6 +20,10 @@ htmlcov/
 tests/
 docs/
 
+# Locally-collected staticfiles output (the Dockerfile runs collectstatic
+# fresh inside the image — don't ship dev's stale collected tree).
+staticfiles/
+
 # Local env (secrets!) — keep .env.example as template
 .env
 .env.*

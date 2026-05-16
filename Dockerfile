@@ -47,6 +47,17 @@ WORKDIR /app
 COPY --from=builder --chown=app:app /opt/venv /opt/venv
 COPY --chown=app:app . /app
 
+# Collect static assets into STATIC_ROOT (/app/staticfiles) so whitenoise can
+# serve them at runtime. Build-time env vars are placeholders — collectstatic
+# only needs the settings module to import successfully, not real infra
+# credentials. None of these values are baked into the image (RUN-scoped).
+RUN DJANGO_SECRET_KEY=build-time-only-not-used \
+    DATABASE_URL=sqlite:///build.sqlite3 \
+    REDIS_URL=redis://localhost:6379/0 \
+    CELERY_BROKER_URL=redis://localhost:6379/1 \
+    CELERY_RESULT_BACKEND=redis://localhost:6379/2 \
+    python manage.py collectstatic --noinput
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=3 \
