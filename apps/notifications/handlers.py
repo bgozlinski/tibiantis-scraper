@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import urllib.parse
 from typing import TYPE_CHECKING, Protocol, Any
 
 if TYPE_CHECKING:
@@ -103,10 +104,29 @@ class DiscordChannelHandler:
         )
 
     def _render_embed(self, death_event: DeathEvent) -> dict[str, Any]:
+        """Build Discord embed with hyperlinked character name + line-by-line info.
+
+        Per #178: `title` is the raw character name; `url` makes it a clickable
+        hyperlink to the Tibiantis online character page (quote_plus encoding —
+        Tibiantis uses `+` for spaces in URLs). `description` carries the three
+        info lines (level / wall-clock time / killer). Empty `killed_by` renders
+        as "unknown" (the model default for un-parsed kill messages).
+
+        Embed `timestamp` field intentionally absent — wall-clock time lives in
+        `description` now. Discord's footer timestamp would render in viewer's
+        local TZ and disagree with the description, confusing operators.
+        """
         return {
-            "title": f"💀 {death_event.character_name} (level {death_event.level_at_death})",
-            "description": death_event.killed_by or "Cause unknown",
-            "timestamp": death_event.died_at.isoformat(),
+            "title": death_event.character_name,
+            "url": (
+                "https://www.tibiantis.online/?page=character&name="
+                + urllib.parse.quote_plus(death_event.character_name)
+            ),
+            "description": (
+                f"Died at level {death_event.level_at_death}\n"
+                f"{death_event.died_at:%Y-%m-%d %H:%M:%S}\n"
+                f"Killed by: {death_event.killed_by or 'unknown'}"
+            ),
             "color": 0xDC143C,  # crimson
         }
 
