@@ -12,9 +12,18 @@ Algorithm:
   1. Group Character rows by LOWER(name).
   2. For groups with >1 row, pick a winner (highest level — more info from
      the more recent scrape; tie-break lowest id — created first).
-  3. Relink BedmageWatch.character_id from losers to winner.
-  4. Delete loser Character rows.
-  5. UPDATE winner's name to canonical form (first-upper, rest-lower).
+  3. Dedupe BedmageWatch per user across {winner, losers}: if a single user
+     has watches on multiple case-variants (e.g. dev tested `/bedmage add
+     Akrutki` + `/bedmage add akrutki` in the same Discord session — the
+     M9.5-D47 reproduction scenario), keep the oldest watch (lowest id,
+     created first) per (user, group) pair and delete the rest. Skipping
+     this step causes the relink in #4 to produce two `(user, winner)`
+     rows, violating BedmageWatch's
+     `unique_bedmage_watch_per_user_character` constraint and aborting
+     the migration.
+  4. Relink surviving BedmageWatch.character_id from losers to winner.
+  5. Delete loser Character rows.
+  6. UPDATE winner's name to canonical form (first-upper, rest-lower).
 
 The canonical-form UPDATE uses direct queryset UPDATE rather than save() —
 migration code runs against a historical model snapshot where the save()
@@ -45,6 +54,29 @@ def dedupe_character_names(apps, schema_editor):
             rows.sort(key=lambda r: (-(r.level or 0), r.id))
             winner = rows[0]
             loser_ids = [r.id for r in rows[1:]]
+            affected_character_ids = [winner.id, *loser_ids]
+
+            # Per-user dedupe across the affected Character set. The unique
+            # constraint `unique_bedmage_watch_per_user_character` on
+            # BedmageWatch(user, character) would reject the relink below
+            # if a single user had multiple watches across {winner, losers}.
+            # Keep the lowest-id watch (oldest, created first) per user,
+            # delete the rest.
+            watches_by_user: dict[int, list[int]] = {}
+            for watch in (
+                BedmageWatch.objects.filter(character_id__in=affected_character_ids)
+                .order_by("id")
+                .only("id", "user_id")
+            ):
+                watches_by_user.setdefault(watch.user_id, []).append(watch.id)
+
+            redundant_watch_ids: list[int] = []
+            for ids_for_user in watches_by_user.values():
+                if len(ids_for_user) > 1:
+                    redundant_watch_ids.extend(ids_for_user[1:])
+
+            if redundant_watch_ids:
+                BedmageWatch.objects.filter(id__in=redundant_watch_ids).delete()
 
             BedmageWatch.objects.filter(character_id__in=loser_ids).update(
                 character_id=winner.id
