@@ -98,6 +98,7 @@ ENV/
 [Ll]ib64
 [Ll]ocal
 [Ss]cripts
+!docs/scripts/
 pyvenv.cfg
 .venv
 pip-selfcheck.json
