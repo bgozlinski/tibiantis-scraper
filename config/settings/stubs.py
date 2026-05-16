@@ -46,3 +46,25 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     *LOCAL_APPS,
 ]
+
+# Override DATABASES for mypy's isolated env. Post-#163, base.py hardcodes
+# ENGINE=django.db.backends.postgresql, which triggers Django to import
+# psycopg/psycopg2 at app-loading time (mypy-django-plugin calls
+# apps.populate(INSTALLED_APPS), which builds Model._meta.db_table, which
+# touches connection.ops, which loads the backend). The mypy pre-commit hook
+# runs in an isolated venv with only the listed additional_dependencies — no
+# psycopg there — so the postgres backend fails to import with
+# ModuleNotFoundError.
+#
+# sqlite3 is in the Python stdlib (no extra dep needed) and is sufficient for
+# the django-stubs plugin to populate apps + resolve model relationships for
+# type checking. Same trick that pre-#163 stubs.py got for free by setting
+# DATABASE_URL=sqlite:///:memory: (env.db() inferred the engine from the URL
+# scheme); post-#163 we have to override DATABASES explicitly since base.py
+# no longer infers engine from a URL.
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": ":memory:",
+    },
+}
