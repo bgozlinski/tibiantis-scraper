@@ -763,3 +763,154 @@ Wszystkie 4 zadania ukończone, milestone gotowy do zamknięcia. Design spec: [`
   - **TTL retention indexes na Mongo** (M6) — wciąż low priority.
   - **`User.email` model divergence** (M8 hotfix #134) — kandydat na custom User design w M-future.
   - **`Character.house`/`guild_membership` `null=True` vs spec `blank=True`** (M8 hotfix #140) — M-future cleanup PR.
+
+---
+
+## M10 — Hardening (D49-D52)
+
+### Status: ✅ COMPLETED
+**Data start/koniec:** 2026-05-16 / 2026-05-16 (~1 dzień vs 4 dni z budżetu — wyprzedzenie 3 dni; cały M10 zrealizowany w jednym dniu kalendarzowym przez direct user-Claude pair pattern, 4 PRs functional + 1 close PR + 1 hotfix mid-deploy)
+**Issues:** [#164](https://github.com/bgozlinski/tibiantis-scraper/issues/164), [#162](https://github.com/bgozlinski/tibiantis-scraper/issues/162), [#163](https://github.com/bgozlinski/tibiantis-scraper/issues/163) — wszystkie CLOSED
+**PRs:** #170 (D49 #164), #172 (D50 #162), #173 (D51 #163), #174 (hotfix discord_bot wrapper #164-follow-up), ten close PR
+**Spec:** [`docs/superpowers/specs/2026-05-16-m10-hardening-design.md`](docs/superpowers/specs/2026-05-16-m10-hardening-design.md) (#171)
+**Plan:** [`docs/superpowers/plans/2026-05-16-m10-implementation-plan.md`](docs/superpowers/plans/2026-05-16-m10-implementation-plan.md) (#171)
+
+### D49 — Issue #164: `Character.name` case-insensitive canonicalization
+- **#170 PR (merge 2026-05-16):** Data-correctness bug discovered on M9.5-D47 dev guild testing: `/bedmage add Akrutki` + `/bedmage add akrutki` produced 2 separate `Character` rows + 2 separate `BedmageWatch` rows. Tibiantis treats names case-insensitively at the game layer, DB nie zgadzało się z tym kontraktem.
+
+  **Fix (3-layer):**
+  1. **`_canonicalize_name(name)` helper** w `apps/characters/models.py` — explicit primitive `s.strip()[0].upper() + s.strip()[1:].lower()`, **NOT** `str.capitalize()` (per spec §3.4 — `.capitalize()` lowercases internal letters jako side effect, future-proofs against non-ASCII names).
+  2. **`Character.save()` override** applies canonicalization on every save (create + update path). Test `test_name_canonicalized_on_update_via_save` exercises the rename path explicitly.
+  3. **DB-level `UniqueConstraint(Lower("name"))`** w `Meta.constraints` — belt-and-suspenders against `bulk_create` / `RunPython` / raw SQL bypassing `save()`. Test `test_name_unique_constraint_holds_against_bulk_create_bypass` proves the index exists, not just the save() override.
+
+  **Migration ordering** (spec §3.1 — critical):
+  - `0005_dedupe_character_names` (manually written `RunPython`) musi runnąć **przed** `0006_character_name_lower_unique` (auto-generated schema). Schema migration trips on existing duplicates jeśli dedupe nie ran first.
+  - Auto-generated `makemigrations` produkuje `0005_character_character_name_lower_unique` — manual rename do `0006_*` + edit dependencies, write `0005_dedupe_character_names` z lower number + dependencies pointing at `0004_*`.
+
+  **Services canonicalize at entry** (D49.6 audit) — `apps/characters/services.py:upsert_character`, `apps/bedmages/services.py:add_bedmage_watch` + `remove_bedmage_watch`. Pattern: canonicalize input string at service boundary, then all internal queries use the canonical form via exact-match SQL (cleaner than `__iexact` lookups, surfaces canonicalization close to user input).
+
+  **Tests updated** (D49.7) — 5 assertion sites in `tests/unit/bedmages/test_services.py` + `test_graphql_bedmages.py` swapped `"NewChar"` → `"Newchar"` (internal `C` lowercased by canonicalize). Plan task D49.7 flagged these in advance.
+
+  **Code review (#170):** Reviewer caught real bug — data migration `0005`'s `BedmageWatch.objects.filter(character_id__in=loser_ids).update(character_id=winner.id)` could violate `unique_bedmage_watch_per_user_character` if a single user had watches on BOTH case-variants of the same colliding Character (exactly the dev-guild M9.5-D47 scenario). Without dedupe-per-user the relink produces two `(user, winner)` rows → IntegrityError → migration aborts mid-deploy. Score 75 was below the ≥80 threshold per skill rubric, but verified as real and included anyway. **Fix commit `e338405`** added per-user watch dedupe before relink. This fix saved the M10-D52 prod deploy — local dev guild had exactly the one-user-two-watches scenario, would have crashed migrate without the dedupe.
+
+### D50 — Issue #162: Django admin static files via whitenoise
+- **#172 PR (merge 2026-05-16):** Admin renders unstyled in prod (`DEBUG=False`, gunicorn, no nginx) — `STATIC_URL` set ale brak `STATIC_ROOT`, brak whitenoise, brak `collectstatic` w Dockerfile. Browser GET `/static/admin/css/base.css` → 404. Never caught w M9-D41/D42/D43 smoke bo nikt nie wszedł na `/admin/`.
+
+  **Fix (3-part config contract):**
+  1. **`STATIC_ROOT = BASE_DIR / "staticfiles"`** w `config/settings/base.py` (collectstatic destination)
+  2. **`WhiteNoiseMiddleware`** immediately after `SecurityMiddleware` w `MIDDLEWARE` (per whitenoise docs — placement is strict)
+  3. **`STORAGES["staticfiles"]["BACKEND"] = "whitenoise.storage.CompressedManifestStaticFilesStorage"`** — Django 6 settings shape (NOT legacy `STATICFILES_STORAGE`), compressed = gzip/brotli at build time, manifest = hash-in-filename for far-future Cache-Control.
+
+  **Dockerfile collectstatic step** — `RUN python manage.py collectstatic --noinput` w final stage między source COPY a `EXPOSE`. Inlines 5 RUN-scoped placeholder env vars (`DJANGO_SECRET_KEY=build-time-only-not-used`, `DATABASE_URL=sqlite:///build.sqlite3`, etc.) — collectstatic needs only settings to import successfully, not real infra credentials. Placeholders are RUN-scoped (not in container runtime env), but DO appear in `docker history --no-trunc` layer metadata — only safe because none są real secrets. (Inline comment fixed during D51 to be more honest about layer visibility.)
+
+  **`.dockerignore` + `.gitignore`** — exclude `staticfiles/`. Dockerfile collects fresh inside the image; don't ship dev's stale local tree. `.gitignore` already had `/staticfiles/` since initial setup.
+
+  **Dev parity** — `runserver` w `DEBUG=True` dalej serwuje admin via Django's `django.contrib.staticfiles` app. Whitenoise stays out of the way (no `WHITENOISE_USE_FINDERS`, no `runserver_nostatic` w INSTALLED_APPS).
+
+  **3 RED-now-GREEN tests** w `tests/unit/core/test_static_files.py` pin the contract: `STATIC_ROOT` configured, `STORAGES["staticfiles"]` backend = whitenoise's compressed-manifest, `WhiteNoiseMiddleware` immediately after `SecurityMiddleware`.
+
+  **Code review (#172):** No substantive issues. 3 docstring nits surfaced (Django 6 vs 4.2 deprecation of `STATICFILES_STORAGE`, Dockerfile RUN-scoped comment overclaim, "earlier or later breaks" overstatement) — all scored 50-75, below ≥80 threshold. Polish-PR candidate.
+
+### D51 — Issue #163: DATABASE_URL DRY refactor
+- **#173 PR (merge 2026-05-16):** M9.5-D47 operator footgun — `.env.example` duplicated `POSTGRES_PASSWORD` inside `DATABASE_URL` (`postgres://tibiantis:<password>@postgres:5432/...`). Operator generated strong random password but forgot to update both — postgres initialised z new pwd, Django connected z placeholder, migrate exit 1 z `password authentication failed`. Cost ~30 min na first prod deploy.
+
+  **Fix (per spec §3.4 Option A — unify dev/CI/prod env shape):** `DATABASES["default"]` explicitly constructed w `config/settings/base.py` z individual `POSTGRES_*` env vars (USER, PASSWORD, DB, HOST, PORT). Single source of truth — operator wpisuje password w jednym miejscu. ENGINE pinned to postgresql, HOST defaults `"postgres"` (compose service name), PORT defaults 5432.
+
+  **5 code sites changed:**
+  - `config/settings/base.py:99` — `env.db()` → explicit dict
+  - `config/settings/stubs.py:28` — mypy stub `setdefault DATABASE_URL` → `setdefault POSTGRES_*`
+  - `Dockerfile:55` — collectstatic RUN placeholder `DATABASE_URL=sqlite://...` → `POSTGRES_*=build`
+  - `.env.example` — `DATABASE_URL` line removed, `POSTGRES_HOST`/`POSTGRES_PORT` added
+  - `.github/workflows/ci.yml` — test job env block swapped
+
+  **3 docs updates** — `CLAUDE.md` §10+§13.1 snippets, `docs/deploy-runbook.md` §4.3+§9.12 (removed "passwords must match" warning + rewrote password-auth-failed troubleshooting for single-source-of-truth), `docs/dev-runbook.md` §1+§6.
+
+  **3 RED-now-GREEN tests** w `tests/unit/core/test_settings.py` pin the contract via grep-after-strip-comments: no `DATABASE_URL` in non-comment code in `base.py`, `.env.example`, or `ci.yml`. Uses `_strip_hash_comments` helper so explanatory prose mentioning the removed setting by name doesn't false-fail.
+
+  **Pułapka D51:** Pre-commit failed na CI z `ModuleNotFoundError: No module named 'psycopg'` po D51 merged. Pre-#163, `stubs.py` set `DATABASE_URL=sqlite:///:memory:`; `env.db()` inferred ENGINE from URL scheme → sqlite3 (stdlib, no driver dep) → mypy plugin happy. Post-#163, `base.py` hardcodes `ENGINE=django.db.backends.postgresql` → mypy plugin's `apps.populate()` triggers Model._meta.db_table → connection.ops loads postgres backend → import psycopg fails (not in mypy hook's `additional_dependencies`). Local pre-commit passed because cached env had psycopg from prior install; CI fresh-built env didn't. **Fix commit `bcd3819`** — override `DATABASES` in `stubs.py` AFTER `from base import *` to use sqlite3 (stdlib). Saved as memory `feedback_stubs_py_backend_overrides.md` — rule: when base.py changes which Django backend or third-party package gets imported during `apps.populate()`, stubs.py must mirror an override. Local cache hides; CI catches.
+
+### D52 — Milestone close: re-deploy, smoke, retro
+- **Deploy steps (D52.1-D52.4) executed in 1 session:**
+  - **D52.1** — `pg_dump` backup na VM (63K SQL file, rollback insurance, kept ≥7 days per plan).
+  - **D52.2** — `.env` updated: removed `DATABASE_URL` line, added `POSTGRES_HOST=postgres POSTGRES_PORT=5432`. Mode 600 preserved.
+  - **D52.3** — `docker compose pull && up -d`. Migrations applied cleanly: `0005_dedupe_character_names OK` + `0006_character_name_lower_unique OK`. **Migration 0005 ran without IntegrityError** — confirms the per-user dedupe fix from PR #170 code review actually mattered in prod (dev guild had the one-user-two-watches scenario, would have crashed without `e338405`). All services healthy (web/celery_worker/celery_beat/discord_bot/uptime-kuma); discord bot logged in OK.
+  - **D52.4** — Smoke verify:
+    - ✅ `/admin/` via SSH tunnel renders fully styled (whitenoise serves the collected tree)
+    - ✅ `grep DATABASE_URL /opt/tibiantis/.env` → no output (D51 hygiene)
+    - ✅ Prod data dedupe — psql `LOWER(name) HAVING COUNT(*)>1` returns 0 rows; orphan `BedmageWatch.character_id` query returns 0 rows
+    - ⚠️ **PUŁAPKA wykryta** — `/bedmage add Akrutki` + `/bedmage add akrutki` produced "Something went wrong. The admins have been notified" instead of friendly "already exists" ack. (Below.)
+
+- **Pułapka D52 (M10 deploy bug) → hotfix #174:**
+
+  `discord_bot/services.py:add_bedmage_for_discord_user` wraps `apps.bedmages.services.add_bedmage_watch` z `try/except ValueError → BedmageWatch.objects.get(...)`. After #164 the apps service canonicalizes `"akrutki"` → `"Akrutki"` at entry, Character row is stored canonical, ValueError raises on duplicate. The bot wrapper catches ValueError correctly but then does `.get(character__name=character_name)` — and `character_name` was still the RAW user-typed `"akrutki"` (the discord_bot.services audit missed this downstream call). `.get()` 404s, raises `BedmageWatch.DoesNotExist`, escapes wrapper, cog's catch-all renders the generic error.
+
+  **Fix in `b87ae37` (PR #174):** import `_canonicalize_name` w `discord_bot/services.py`, apply at entry of `add_bedmage_for_discord_user` BEFORE both the inner service call AND the `.get()` recovery. `remove_bedmage_for_discord_user` not affected — delegates straight to `apps.bedmages.services.remove_bedmage_watch` which canonicalizes at entry per D49.6.
+
+  **Regression test** — `test_add_bedmage_for_discord_user_returns_existing_on_duplicate_with_different_casing` adds `"Akrutki"` then `"akrutki"` through the wrapper. Existing same-casing test (`Yhral` → `Yhral`) passed in CI because `_canonicalize_name` is a no-op on already-canonical input — that's why this slipped through D49.6.
+
+  **Saved as memory `feedback_canonicalization_downstream_audit.md`** — rule: when introducing canonicalize-at-entry in `apps/<app>/services.py`, audit downstream wrappers (discord_bot, GraphQL resolvers, REST views) for their own `.get()`/`.filter()` calls that bypass the service. Grep pattern provided.
+
+- **Bot redeploy on VM:** `docker compose pull discord_bot && docker compose up -d discord_bot` — only the bot needed restart, web/celery/migrate untouched. Smoke retry: `/bedmage add Akrutki` then `/bedmage add akrutki` → friendly "already exists" ack ✓; `/bedmage remove akrutki` → success (case-insensitive lookup works) ✓.
+
+### Definition of Done M10 (ze spec'a §4) — ✅ wszystkie domknięte
+- [x] **All 3 issue PRs merged + CI green** — #170 (#164), #172 (#162), #173 (#163). Lint + test + coverage above 70% threshold on master post-merge.
+- [x] **Re-deploy to Hetzner VM + smoke verify** — D52.4 4 checks all passed. Admin styled / `.env` clean of DATABASE_URL / case-insensitive bedmage (after hotfix #174 + bot redeploy).
+- [x] **Prod data dedupe verified for #164** — psql `LOWER(name)` collision query: 0 rows. Orphan `BedmageWatch.character_id` query: 0 rows. M9.5-D47 dev guild's duplicate `Akrutki`/`akrutki` Character rows correctly merged by the migration.
+- [x] **Retro + PROGRESS close PR merged** — this PR.
+- [x] **Hotfix #174 (M10 follow-up)** — discord_bot wrapper canonicalization gap closed mid-deploy; deployed before milestone close.
+
+### Podsumowanie M10 (2026-05-16, ~1 dzień vs 4 dni z budżetu — wyprzedzenie 3 dni)
+- **3 issues + 4 PR-ów functional + 1 hotfix + ten close PR w 1 dniu kalendarzowym.** Strict chain D49 → D50 → D51 → D52 zachowany. Discovered bug in prod (D52 deploy) → same-day hotfix #174 → re-deploy → milestone close. Cycle: dev guild test → bug surfaced → log diagnosed → root cause identified → hotfix branched + PR'd + reviewed + merged + redeployed + verified — ~30 min total.
+- **DoD M10 spełnione** — wszystkie 3 issues closed, prod re-deployed + verified, data dedupe confirmed via psql, retro committed.
+- **Najwartościowsze lekcje M10:**
+  1. **TDD RED scaffold pattern działa** (D49.1, D50.2, D51.2). Claude scaffolds failing tests first → dev implements GREEN → tests are the spec. 16 RED tests across D49+D50+D51 all turned GREEN as implementation landed. RED test scaffold also acts as design doc — the test names + assertions encode the contract more precisely than prose.
+  2. **Code review caught the actually-shipping bug** (PR #170 review). Reviewer flagged BedmageWatch unique-constraint violation in data migration 0005's relink step. Score 75 was below ≥80 strict threshold but included anyway because verified real. Without the per-user dedupe fix in `e338405`, the prod migrate step na D52 would have crashed mid-deploy w IntegrityError. Generalizable: **trust the review process — even score-75 issues with clear evidence are worth including over strict threshold rules.**
+  3. **Local pre-commit cache hides CI failures when settings change Django imports** (D51 retro, hotfix `bcd3819`). Migration from `env.db()` (URL-scheme-derived ENGINE) → explicit `ENGINE=postgresql` triggered mypy hook ModuleNotFoundError on CI fresh env, but local cache had psycopg from prior install so local passed. **Pre-flight: `pre-commit clean && pre-commit run mypy --all-files` before pushing a base.py change that flips imports.** Memory `feedback_stubs_py_backend_overrides.md`.
+  4. **Canonicalize-at-service-entry doesn't cover downstream wrappers** (D52 hotfix #174). `apps.bedmages.services.add_bedmage_watch` canonicalizes inside but `discord_bot.services.add_bedmage_for_discord_user`'s `except ValueError → .get()` recovery does its own query — missed the canonicalization audit. Same-casing test masked the bug because canonicalize is a no-op on already-canonical input. **Mixed-casing testing is the discriminator** for this bug class. Memory `feedback_canonicalization_downstream_audit.md` + grep pattern.
+  5. **Data migration RunPython needs idempotent design** (D49.4). `0005_dedupe_character_names` is safe to re-run on already-deduped data: every LOWER(name) group has size 1, dedupe block skipped, canonical-rename UPDATE is conditional on actual change. **Generalizable for all RunPython data migrations:** assume re-run-safe even if deps say otherwise (Django won't normally re-run, but operator may force migrate replay during recovery).
+  6. **Migration ordering = renumber + edit dependencies** (D49.4). `makemigrations` auto-generates `0005_*` schema; if dedupe RunPython needs to run first, manually rename auto-gen to `0006_*` + edit its `dependencies = [('characters', '0005_dedupe_*')]`. **Verify w `python manage.py showmigrations characters`** before committing — Django happy z explicit dep chain.
+  7. **Direct user-Claude pair pattern delivers 3-4x faster than expected** (M10 budget vs actual). 4 days planned, 1 day actual. Pattern: Claude scaffolds tests + reads code + drafts commits + opens PRs; user merges + reviews + does deploys. Single-thread, low-context-switching. But also: discovered M10-D52 prod bug because tests didn't exercise mixed-casing through the bot wrapper (lesson 4) — speed traded for one missed audit site. Acceptable trade given same-day hotfix.
+
+### Tech debt z M10 (do adresowania post-M10 / M10.5 / M11 / M-future)
+
+**M10.5 — kandydaci (lightweight, mogą trafić razem):**
+- **Image scanning w `docker.yml`** — Trivy / Snyk / Docker Scout step przed push, fail na high/critical CVEs. Z M9.5 carry-over.
+- **`DJANGO_ALLOWED_HOSTS` hygiene** — CLAUDE.md addendum dla internal-caller hostnames (web, nginx, blackbox-exporter). Z M9.5 carry-over.
+- **fail2ban + unattended-upgrades** — VM-level polish (bootstrap.sh extension).
+- **Pre-commit autoupdate** — osobny PR, M-cykl quarterly cadence.
+- **`_canonicalize_name` underscore convention vs cross-module import** — flagged w PR #170 review (score 25, below threshold). Rename to `canonicalize_name` (drop `_`) or move to `apps/characters/utils.py`. Stylistic; current works.
+- **`docs(progress): close M10` PR conventional-commit scope** — `m10` (no dot, no underscore needed). Lesson: fractional milestone (M9.5) used `m9_5`; non-fractional (M10) can use bare digit.
+
+**M11 — kandydaci (potrzebne design effort):**
+- **Postgres backups → S3-compatible** (Backblaze B2 / Hetzner Object Storage / Wasabi) — wymaga decyzji o retention, encryption, restore drill cadence. Z M9.5 carry-over, critical (0 backups w prod).
+- **`docker compose pull` cron na VM** — auto-update post master push, paired z observability/alerting (Kuma notification gdy pull fails / image old). Z M9.5 carry-over.
+- **Discord bot Mongo heartbeat + Kuma monitor #5** — wymaga app code change (bot pisze heartbeat doc do mongo co N sec, Kuma scrape'uje).
+- **`celery_beat` pidfile race** — `celery status` per-worker ping zamiast pidfile.
+
+**M-future (osobne milestones, znacząca scope):**
+- **TLS + DNS subdomain** — Caddy w docker-compose + Let's Encrypt + Hetzner Cloud DNS subdomain. Wymaga DNS provider integration + Cloud Firewall config (80/443 open).
+- **GHA auto-deploy job** — SSH na Hetzner po master push, `docker compose pull && up -d`. Wymaga secrets HETZNER_HOST/USER/SSH_KEY.
+- **Multi-arch builds** (`linux/amd64,linux/arm64`). YAGNI dopóki single deploy target.
+- **VM-level logs aggregation** — Loki + Promtail lub Grafana Cloud. Aktualnie `docker logs` na żądanie wystarcza.
+- **Multi-environment (staging + prod)** — wymaga drugiej VM lub namespace strategy.
+
+**M10-internal carry-over (nieujęte w spec ale wykryte w trakcie):**
+- **CLAUDE.md §10 violation w Dockerfile** — `poetry export` + `pip install -r requirements.txt` pattern still present (introduced w #168 venv isolation fix). CLAUDE.md §10 explicitly bans this ("Nie eksportuj do `requirements.txt` — to legacy pattern"). Pre-existing tech debt; M10 nie wprowadził ale też nie naprawił. **Osobny chore PR kandydat** — `poetry install --no-dev --no-root` directly w obrazie.
+- **`_strip_hash_comments` test helper doesn't handle inline YAML comments** (PR #173 review nit, score 50). E.g. `POSTGRES_PORT: "5432" # was DATABASE_URL` would still trigger assertion. Defensive enhancement candidate; current works because no such inline comments exist.
+- **Test docstring nits** (PR #172 review): `STATICFILES_STORAGE` deprecated w Django 4.2 not 6, Dockerfile RUN-scoped comment overclaim. Polish-PR candidate.
+
+**Carry-over z M9.5 tech debt (wciąż otwarte, M10 nie adresował):**
+- **`bootstrap.sh` re-run idempotency hardening** — `--reset-data` flag lub osobny `reset.sh`.
+- **Hetzner Cloud Firewall + UFW redundancy** — Terraform/Pulumi state-as-code.
+
+**Carry-over z M9 tech debt (wciąż otwarte):**
+- **Image size 480MB** (split scraper vs web image, distroless, multi-arch) — wciąż nie adresowane.
+- **`discord_bot` healthcheck** — heartbeat do Mongo + healthcheck script. M-future.
+
+**Carry-over z M0-M8 tech debt (wciąż otwarte):**
+- **Branch protection master required `test/Pytest` check** — 11+ M-cykli bez tego gate'a. M10.5 quick win kandydat.
+- **`django_stubs_ext.monkeypatch()`** sweep w jednym chore PR.
+- **`celery-types` package** — wciąż carry-over.
+- **TTL retention indexes na Mongo** (M6) — wciąż low priority.
+- **`User.email` model divergence** (M8 hotfix #134) — kandydat na custom User design w M-future.
+- **`Character.house`/`guild_membership` `null=True` vs spec `blank=True`** (M8 hotfix #140) — M-future cleanup PR.
