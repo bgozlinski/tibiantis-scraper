@@ -25,7 +25,11 @@ import os
 # values take precedence — these only kick in for isolated mypy runs that
 # have neither (e.g. pre-commit's isolated env on a fresh machine).
 os.environ.setdefault("DJANGO_SECRET_KEY", "stub-not-runtime")
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+os.environ.setdefault("POSTGRES_DB", "stub")
+os.environ.setdefault("POSTGRES_USER", "stub")
+os.environ.setdefault("POSTGRES_PASSWORD", "stub")
+os.environ.setdefault("POSTGRES_HOST", "stub")
+os.environ.setdefault("POSTGRES_PORT", "5432")
 os.environ.setdefault("CELERY_BROKER_URL", "memory://")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")

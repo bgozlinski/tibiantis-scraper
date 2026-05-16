@@ -98,8 +98,7 @@ python3 -c "import string, secrets; print(''.join(secrets.choice(string.ascii_le
 
 Edit `.env`:
 - `DJANGO_SECRET_KEY=<generated 50-char alphanumeric>`
-- `POSTGRES_PASSWORD=<32-char alphanumeric>` (regenerate with the snippet above — alphanumeric avoids both compose `$VAR` interpolation AND URL-encoding inside `DATABASE_URL`)
-- **`DATABASE_URL=postgres://tibiantis:<same-as-POSTGRES_PASSWORD>@postgres:5432/tibiantis`** — the password appears twice; both must match exactly, or migrate exits 1 with `password authentication failed for user "tibiantis"`. Tech debt: should be DRY-constructed in `config/settings/prod.py` from individual `POSTGRES_*` vars (follow-up issue).
+- `POSTGRES_PASSWORD=<32-char alphanumeric>` (regenerate with the snippet above — alphanumeric avoids compose `$VAR` interpolation; #163 removed the duplicate password inside a `DATABASE_URL` URL, so this value only lives in one place now)
 - `DISCORD_BOT_TOKEN=<real token from Discord Developer Portal>`
 - `DJANGO_ALLOWED_HOSTS=<hetzner-ipv4>,localhost,web` — `web` is required so Uptime Kuma's internal-DNS monitor (`http://web:8000/health/`) doesn't get rejected by Django with `DisallowedHost`.
 
@@ -272,15 +271,15 @@ Option A leaves the rollback visible in the compose file (good for incident time
 ### 9.12 migrate exit 1: password authentication failed
 
 **Symptom:** `docker compose logs migrate` ends with `psycopg.OperationalError: ... password authentication failed for user "tibiantis"`. Web/celery/bot stay in `Created` state.
-**Cause:** `POSTGRES_PASSWORD` and the password embedded inside `DATABASE_URL` in `.env` don't match. Postgres initialized its data volume with the value of `POSTGRES_PASSWORD` on first boot; Django connects using `DATABASE_URL`.
+**Cause (post-#163):** `POSTGRES_PASSWORD` in `.env` doesn't match the password postgres was initialized with. The DRY refactor (#163) eliminated the historical "password in two places" footgun — `.env` now has a single `POSTGRES_PASSWORD` consumed by both the postgres container's `initdb` and Django's settings. If they mismatch, postgres initialised its data volume with one value (first-boot only) while `.env` was later edited to a different value.
 **Fix:**
 ```bash
 docker compose down
 docker volume rm tibiantis_postgres_data    # ONLY safe before any real data exists
-# Edit .env: make sure POSTGRES_PASSWORD and the password inside DATABASE_URL match exactly
+# Confirm .env has the password you want, then:
 docker compose up -d
 ```
-If postgres has real data, do NOT drop the volume — instead, edit `DATABASE_URL` in `.env` to match the password postgres was initialized with, and `docker compose up -d --force-recreate web migrate celery_worker celery_beat discord_bot`.
+If postgres has real data, do NOT drop the volume — instead, edit `.env`'s `POSTGRES_PASSWORD` back to whatever value postgres was originally initialized with, then `docker compose up -d --force-recreate web migrate celery_worker celery_beat discord_bot`. The password value is recoverable from the operator's password manager / first-deploy notes; there's no second value in `.env` to consult.
 
 ## §10 Cost tally
 

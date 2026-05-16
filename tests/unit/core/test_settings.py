@@ -25,22 +25,39 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parents[3]
 
 
+def _strip_hash_comments(text: str) -> str:
+    """Return text with `#`-comment lines removed.
+
+    Used by the no-DATABASE_URL checks so explanatory prose mentioning the
+    removed setting by name (e.g. "DATABASE_URL was an operator footgun")
+    doesn't false-fail the test. The contract is "no code USES DATABASE_URL",
+    not "the string literal never appears" — comments survive the strip.
+    """
+    return "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
 def test_settings_base_has_no_database_url_or_env_db_references() -> None:
     """`config/settings/base.py` constructs DATABASES from individual POSTGRES_*
     env vars — no `env.db()` URL-parser call and no `DATABASE_URL` reference
-    remains anywhere in the file.
+    remains in executable code in the file.
 
     Pre-fix: `DATABASES = {"default": env.db()}` parses DATABASE_URL implicitly.
     Post-fix: explicit `DATABASES = {"default": {"ENGINE": ..., "NAME": env(...),
     "USER": env(...), ...}}` keyed off `POSTGRES_*` vars, removing the dual
-    source-of-truth that bit the M9.5-D47 deploy.
+    source-of-truth that bit the M9.5-D47 deploy. Whole-line comments
+    explaining the rationale (which mention DATABASE_URL by name) are
+    permitted and excluded by `_strip_hash_comments`.
     """
-    base_py = (BASE_DIR / "config" / "settings" / "base.py").read_text()
+    base_py = _strip_hash_comments(
+        (BASE_DIR / "config" / "settings" / "base.py").read_text()
+    )
     assert "DATABASE_URL" not in base_py, (
-        "DATABASE_URL reference found in config/settings/base.py — #163 "
-        "removes it. Construct DATABASES from POSTGRES_USER / "
-        "POSTGRES_PASSWORD / POSTGRES_DB / POSTGRES_HOST / POSTGRES_PORT "
-        "instead."
+        "DATABASE_URL reference found in non-comment code in "
+        "config/settings/base.py — #163 removes it. Construct DATABASES "
+        "from POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB / "
+        "POSTGRES_HOST / POSTGRES_PORT instead."
     )
     assert "env.db()" not in base_py, (
         "env.db() call found in config/settings/base.py — #163 replaces the "
@@ -57,11 +74,12 @@ def test_env_example_has_postgres_individual_vars_not_database_url() -> None:
     password to match `POSTGRES_PASSWORD`) becomes structurally impossible —
     there's only one place to set the password.
     """
-    env_example = (BASE_DIR / ".env.example").read_text()
+    env_example = _strip_hash_comments((BASE_DIR / ".env.example").read_text())
     assert "DATABASE_URL" not in env_example, (
-        ".env.example still references DATABASE_URL — #163 removes it. "
-        "Operators set POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB / "
-        "POSTGRES_HOST / POSTGRES_PORT and settings build the connection."
+        ".env.example still references DATABASE_URL in non-comment lines — "
+        "#163 removes it. Operators set POSTGRES_USER / POSTGRES_PASSWORD / "
+        "POSTGRES_DB / POSTGRES_HOST / POSTGRES_PORT and settings build the "
+        "connection. Whole-line `#` comments mentioning the removal are fine."
     )
     for required in (
         "POSTGRES_USER",
@@ -85,11 +103,13 @@ def test_ci_workflow_uses_postgres_env_vars_not_database_url() -> None:
     dev/prod populate the test job env, keeping the env shape uniform across
     all environments. Avoids env-shape drift that #163 is precisely fixing.
     """
-    ci_yml = (BASE_DIR / ".github" / "workflows" / "ci.yml").read_text()
+    ci_yml = _strip_hash_comments(
+        (BASE_DIR / ".github" / "workflows" / "ci.yml").read_text()
+    )
     assert "DATABASE_URL" not in ci_yml, (
-        ".github/workflows/ci.yml still references DATABASE_URL — #163 swaps "
-        "it for individual POSTGRES_* env vars so test/dev/prod share one "
-        "env shape"
+        ".github/workflows/ci.yml still references DATABASE_URL in non-comment "
+        "lines — #163 swaps it for individual POSTGRES_* env vars so "
+        "test/dev/prod share one env shape"
     )
     for required in (
         "POSTGRES_USER",

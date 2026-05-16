@@ -24,7 +24,8 @@ cp .env.example .env
 # Edit:
 #   DJANGO_SECRET_KEY    — generate alphanumeric (see §6)
 #   DISCORD_BOT_TOKEN    — only if running the bot locally
-#   DATABASE_URL=postgres://tibiantis:tibiantis@localhost:5435/tibiantis
+#   POSTGRES_HOST=localhost
+#   POSTGRES_PORT=5435   — host port w docker-compose.dev.yml (NOT 5432)
 #   REDIS_URL=redis://localhost:6379/0
 #   MONGO_URL=mongodb://localhost:27017
 
@@ -190,7 +191,7 @@ python -c "import string, secrets; print(''.join(secrets.choice(string.ascii_let
 
 Use this for dev `.env` AND for production `.env` on the Hetzner VM. Same generator is documented in `deploy-runbook.md` §4.3 — single source of truth.
 
-The same constraint applies to `POSTGRES_PASSWORD` (especially in prod where it's embedded in `DATABASE_URL`): alphanumeric avoids both compose interpolation and URL-encoding inside `postgres://...`.
+The same constraint applies to `POSTGRES_PASSWORD`: alphanumeric avoids compose `$VAR` interpolation. Post-#163 the password lives in exactly one env var (no `DATABASE_URL` URL-encoding to also worry about), but the alphanumeric rule remains useful as a defence against compose interpolation.
 
 ---
 

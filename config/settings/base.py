@@ -95,8 +95,25 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
+#
+# Constructed from individual POSTGRES_* env vars rather than parsing a
+# DATABASE_URL (per #163). The duplication of POSTGRES_PASSWORD inside a
+# URL-shaped DATABASE_URL was an operator footgun on M9.5-D47 first prod
+# deploy — operators generated a strong random password but forgot to also
+# update it inside DATABASE_URL, postgres initialised with the new value,
+# Django connected with the placeholder, migrate exited 1. Single source
+# of truth (POSTGRES_PASSWORD) eliminates the divergence path entirely.
 
-DATABASES = {"default": env.db()}
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": env("POSTGRES_DB"),
+        "USER": env("POSTGRES_USER"),
+        "PASSWORD": env("POSTGRES_PASSWORD"),
+        "HOST": env("POSTGRES_HOST", default="postgres"),
+        "PORT": env.int("POSTGRES_PORT", default=5432),
+    }
+}
 
 
 # Password validation

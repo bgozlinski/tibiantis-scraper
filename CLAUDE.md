@@ -281,7 +281,11 @@ Użyj `djangorestframework-simplejwt` albo `djoser`. **Nie** twórz endpointów 
 DJANGO_SECRET_KEY=
 DJANGO_DEBUG=False
 DJANGO_ALLOWED_HOSTS=
-DATABASE_URL=postgres://user:pass@postgres:5432/tibiantis
+POSTGRES_USER=tibiantis
+POSTGRES_PASSWORD=tibiantis
+POSTGRES_DB=tibiantis
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
 MONGO_URL=mongodb://mongo:27017
 MONGO_DB=tibiantis_logs
 REDIS_URL=redis://redis:6379/0
@@ -458,7 +462,11 @@ jobs:
         image: mongo:7
         ports: ["27017:27017"]
     env:
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/tibiantis_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: tibiantis_test
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
       REDIS_URL: redis://localhost:6379/0
       CELERY_BROKER_URL: redis://localhost:6379/1
       MONGO_URL: mongodb://localhost:27017
