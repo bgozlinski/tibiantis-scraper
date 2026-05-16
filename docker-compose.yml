@@ -39,7 +39,7 @@ services:
   # ─── Migration (one-shot) ─────────────────────────────────────────
 
   migrate:
-    image: ghcr.io/bgozlinski/tibiantis-scraper:master
+    image: bgozl/tibiantis-scraper:master
     build: .
     env_file: .env
     command: python manage.py migrate --noinput
@@ -51,7 +51,7 @@ services:
   # ─── Application services (shared image) ──────────────────────────
 
   web:
-    image: ghcr.io/bgozlinski/tibiantis-scraper:master
+    image: bgozl/tibiantis-scraper:master
     build: .
     env_file: .env
     command:
@@ -81,7 +81,7 @@ services:
     restart: unless-stopped
 
   celery_worker:
-    image: ghcr.io/bgozlinski/tibiantis-scraper:master
+    image: bgozl/tibiantis-scraper:master
     build: .
     env_file: .env
     command:
@@ -107,7 +107,7 @@ services:
     restart: unless-stopped
 
   celery_beat:
-    image: ghcr.io/bgozlinski/tibiantis-scraper:master
+    image: bgozl/tibiantis-scraper:master
     build: .
     env_file: .env
     command:
@@ -136,7 +136,7 @@ services:
     restart: unless-stopped
 
   discord_bot:
-    image: ghcr.io/bgozlinski/tibiantis-scraper:master
+    image: bgozl/tibiantis-scraper:master
     build: .
     env_file: .env
     command: python manage.py run_discord_bot
