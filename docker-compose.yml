@@ -7,6 +7,12 @@ services:
     env_file: .env
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Localhost-only binding (NOT 0.0.0.0) — reachable from VM's loopback
+      # for ops/SSH-tunnel access, never exposed to public internet.
+      # Pair with `ssh -L 5432:localhost:5432 deploy@<vm-ip>` for laptop-side
+      # GUI access (PyCharm, DBeaver, psql). Same pattern as uptime-kuma.
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
