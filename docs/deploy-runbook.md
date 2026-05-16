@@ -98,9 +98,10 @@ python3 -c "import string, secrets; print(''.join(secrets.choice(string.ascii_le
 
 Edit `.env`:
 - `DJANGO_SECRET_KEY=<generated 50-char alphanumeric>`
-- `POSTGRES_PASSWORD=<random>` (e.g. `openssl rand -base64 32` — but verify no `$` chars, regenerate if so)
+- `POSTGRES_PASSWORD=<32-char alphanumeric>` (regenerate with the snippet above — alphanumeric avoids both compose `$VAR` interpolation AND URL-encoding inside `DATABASE_URL`)
+- **`DATABASE_URL=postgres://tibiantis:<same-as-POSTGRES_PASSWORD>@postgres:5432/tibiantis`** — the password appears twice; both must match exactly, or migrate exits 1 with `password authentication failed for user "tibiantis"`. Tech debt: should be DRY-constructed in `config/settings/prod.py` from individual `POSTGRES_*` vars (follow-up issue).
 - `DISCORD_BOT_TOKEN=<real token from Discord Developer Portal>`
-- `DJANGO_ALLOWED_HOSTS=<hetzner-ipv4>,localhost`
+- `DJANGO_ALLOWED_HOSTS=<hetzner-ipv4>,localhost,web` — `web` is required so Uptime Kuma's internal-DNS monitor (`http://web:8000/health/`) doesn't get rejected by Django with `DisallowedHost`.
 
 ### 4.4 Pull + up
 
@@ -261,6 +262,25 @@ Option A leaves the rollback visible in the compose file (good for incident time
 
 **Symptom:** SSH works on VM console but external SSH connections fail.
 **Fix:** Cloud Console → Firewall → check inbound TCP 22 rule against your current ISP IP (`curl ipify.org`). Update CIDR if it changed.
+
+### 9.11 Kuma `web /health/` monitor red while curl from host works
+
+**Symptom:** All TCP monitors (postgres/redis/mongo) green, but the HTTP monitor `http://web:8000/health/` stays red.
+**Cause:** Django's `ALLOWED_HOSTS` rejects requests with `Host: web:8000` because `web` is the docker service name, not a host Django recognizes — Django returns HTTP 400 `DisallowedHost`, Kuma sees not-200.
+**Fix:** add `web` to `DJANGO_ALLOWED_HOSTS` in `.env`, then `docker compose up -d --force-recreate web`. The monitor recovers on the next 60s interval — no need to recreate it.
+
+### 9.12 migrate exit 1: password authentication failed
+
+**Symptom:** `docker compose logs migrate` ends with `psycopg.OperationalError: ... password authentication failed for user "tibiantis"`. Web/celery/bot stay in `Created` state.
+**Cause:** `POSTGRES_PASSWORD` and the password embedded inside `DATABASE_URL` in `.env` don't match. Postgres initialized its data volume with the value of `POSTGRES_PASSWORD` on first boot; Django connects using `DATABASE_URL`.
+**Fix:**
+```bash
+docker compose down
+docker volume rm tibiantis_postgres_data    # ONLY safe before any real data exists
+# Edit .env: make sure POSTGRES_PASSWORD and the password inside DATABASE_URL match exactly
+docker compose up -d
+```
+If postgres has real data, do NOT drop the volume — instead, edit `DATABASE_URL` in `.env` to match the password postgres was initialized with, and `docker compose up -d --force-recreate web migrate celery_worker celery_beat discord_bot`.
 
 ## §10 Cost tally
 
