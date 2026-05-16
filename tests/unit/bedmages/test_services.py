@@ -91,6 +91,66 @@ def test_add_bedmage_watch_reactivates_inactive(user, character) -> None:
     assert reactivated.last_notified_login is None
 
 
+# === Issue #164: case-insensitive character name (add path) ===
+
+
+@pytest.mark.django_db
+def test_add_bedmage_watch_canonicalizes_character_name(user) -> None:
+    """Lowercase input creates a Character with canonical name.
+
+    The Discord-side `/bedmage add akrutki` flow must converge on the
+    canonical "Akrutki" row, never insert a "akrutki" row alongside it.
+    """
+    add_bedmage_watch(user, "akrutki")
+
+    # exactly one row exists, stored under canonical form
+    assert Character.objects.count() == 1
+    assert Character.objects.filter(name="Akrutki").exists()
+    assert not Character.objects.filter(name="akrutki").exists()
+
+
+@pytest.mark.django_db
+def test_add_bedmage_watch_treats_different_casings_as_same_character(user) -> None:
+    """Adding the same character twice in different casings is a duplicate.
+
+    Pre-fix this silently creates two BedmageWatch rows pointing at two
+    distinct Character rows. Post-fix the second call MUST raise the same
+    "already exists" ValueError as exact-casing duplicates do (see
+    `test_add_bedmage_watch_raises_on_duplicate_active`). This is the
+    behaviour the Discord cog relies on to surface a friendly error to
+    the user.
+    """
+    add_bedmage_watch(user, "Akrutki")
+
+    with pytest.raises(ValueError, match="already exists"):
+        add_bedmage_watch(user, "akrutki")
+
+    assert BedmageWatch.objects.filter(user=user).count() == 1
+    assert Character.objects.count() == 1
+
+
+# === Issue #164: case-insensitive character name (remove path) ===
+
+
+@pytest.mark.django_db
+def test_remove_bedmage_watch_works_with_different_casing(user) -> None:
+    """`/bedmage remove akrutki` must locate the watch created via 'Akrutki'.
+
+    Currently `remove_bedmage_watch` filters `character__name=character_name`
+    — an exact match. After canonicalization, the stored name is always
+    canonical, so the lookup needs to canonicalize the input (or use
+    __iexact). This test exercises the user-visible behaviour: case of
+    typed name is irrelevant.
+    """
+    character = Character.objects.create(name="Akrutki")
+    BedmageWatch.objects.create(user=user, character=character)
+
+    result = remove_bedmage_watch(user, "akrutki")
+
+    assert result is True
+    assert BedmageWatch.objects.filter(user=user, character=character).count() == 0
+
+
 # === remove_bedmage_watch ===
 
 

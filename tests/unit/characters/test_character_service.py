@@ -104,6 +104,38 @@ def test_upsert_propagates_integrity_error_after_single_retry() -> None:
         assert mock_uoc.call_count == 2
 
 
+# === Issue #164: case-insensitive character name canonicalization ===
+
+
+@pytest.mark.django_db
+def test_upsert_with_different_casing_returns_same_row() -> None:
+    """Two upserts of the same game-name in different casings must converge on
+    one Character row.
+
+    Pre-fix, `upsert_character({"name": "Akrutki"})` and
+    `upsert_character({"name": "akrutki"})` produce two rows because
+    `update_or_create(name=...)` does an exact-match lookup. Post-fix, either:
+      a) save() canonicalizes both to "Akrutki" → the second upsert's
+         update_or_create lookup keys on "akrutki", misses, attempts INSERT,
+         hits the case-insensitive unique constraint, retries, and SELECTs
+         the canonical row. The retry path in upsert_character() handles this.
+      b) services.upsert_character itself canonicalizes the lookup key before
+         calling update_or_create.
+
+    Either implementation is acceptable as long as the observable behavior —
+    one row, latest payload wins — holds. This test asserts the behavior, not
+    the path.
+    """
+    first = upsert_character({"name": "Akrutki", "level": 12, "vocation": "Sorcerer"})
+    second = upsert_character({"name": "akrutki", "level": 13, "vocation": "Sorcerer"})
+
+    assert Character.objects.count() == 1
+    assert first.pk == second.pk
+    second.refresh_from_db()
+    assert second.name == "Akrutki"
+    assert second.level == 13
+
+
 @pytest.mark.django_db
 def test_upsert_accepts_none_house_and_guild_membership() -> None:
     """Regression #139 — characters without house AND without guild membership
