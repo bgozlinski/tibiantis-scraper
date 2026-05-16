@@ -198,6 +198,42 @@ def test_add_bedmage_for_discord_user_returns_existing_on_duplicate() -> None:
     )
 
 
+@pytest.mark.django_db
+def test_add_bedmage_for_discord_user_returns_existing_on_duplicate_with_different_casing() -> (
+    None
+):
+    """Regression for M10-D52 prod bug — DoesNotExist surfaced as "Something
+    went wrong" when the second add used a different casing of the same name.
+
+    Post-#164 the apps service canonicalizes "akrutki" → "Akrutki" at entry,
+    creates the Character row under the canonical form, and raises ValueError
+    on duplicate. The bot wrapper's `except ValueError` recovery .get() must
+    also use the canonical form for the lookup — otherwise `character__name=
+    "akrutki"` 404s on a row stored as "Akrutki", BedmageWatch.DoesNotExist
+    escapes the wrapper, and the cog's catch-all renders "Something went
+    wrong" to the user.
+
+    The test that pinned the existing same-casing idempotency
+    (`..._returns_existing_on_duplicate`) didn't catch this because it used
+    "Yhral" → "Yhral" — pre-fix that works because canonicalize is a no-op
+    on already-canonical input. Mixed-casing exercises the bug.
+    """
+    first, first_created = add_bedmage_for_discord_user(
+        discord_id=42, discord_username="alice", character_name="Akrutki"
+    )
+    second, second_created = add_bedmage_for_discord_user(
+        discord_id=42, discord_username="alice", character_name="akrutki"
+    )
+
+    assert first_created is True
+    assert second_created is False
+    assert second.pk == first.pk
+    assert (
+        BedmageWatch.objects.filter(user=first.user, character=first.character).count()
+        == 1
+    )
+
+
 # === remove_bedmage_for_discord_user (D33) ===
 
 
