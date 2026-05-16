@@ -48,11 +48,15 @@ Estimated cost: **~6€/mc** (Hetzner CX22 + free Docker Hub public + free GHA p
    ssh root@<hetzner-ip>
    # Confirm SSH key auth works (no password prompt)
    ```
-3. Run bootstrap:
+3. Run bootstrap (~3-5 min on CX22; prints `[1/8]`..`[8/8]` step markers):
    ```bash
    bash /tmp/bootstrap.sh
    # Check output ends with "Bootstrap complete. SSH as deploy@<ip>..."
    ```
+   The script replaces the snap-installed Docker (pre-shipped on Hetzner Ubuntu 24.04
+   minimal — strict confinement + auto-refresh are production hazards) with docker-ce
+   via the official `get.docker.com` script, then asserts UFW + deploy + docker
+   state before declaring success.
 4. Verify hardening (from laptop, new terminal):
    ```bash
    ssh deploy@<hetzner-ip>           # should work
