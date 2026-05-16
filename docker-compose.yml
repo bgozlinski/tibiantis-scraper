@@ -151,8 +151,19 @@ services:
       disable: true
     restart: unless-stopped
 
+  # ─── Monitoring ───────────────────────────────────────────────────
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    volumes:
+      - uptime_kuma_data:/app/data
+    ports:
+      - "127.0.0.1:3001:3001"
+    restart: unless-stopped
+    # No healthcheck — Kuma monitors others, not itself.
 
 
 volumes:
   postgres_data:
   mongo_data:
+  uptime_kuma_data:
