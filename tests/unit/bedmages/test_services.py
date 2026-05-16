@@ -39,14 +39,14 @@ def character(db):
 @pytest.mark.django_db
 def test_add_bedmage_watch_creates_character_if_missing(user) -> None:
     """Lazy fetch (§4.1): Character is auto-created via get_or_create."""
-    assert Character.objects.filter(name="NewChar").count() == 0
+    assert Character.objects.filter(name="Newchar").count() == 0
 
-    watch = add_bedmage_watch(user, "NewChar")
+    watch = add_bedmage_watch(user, "Newchar")
 
     assert watch.pk is not None
     assert watch.active is True
     assert watch.last_notified_login is None
-    assert Character.objects.filter(name="NewChar").count() == 1
+    assert Character.objects.filter(name="Newchar").count() == 1
 
 
 @pytest.mark.django_db
