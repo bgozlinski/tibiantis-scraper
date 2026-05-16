@@ -1,6 +1,6 @@
 from django.db import IntegrityError, transaction
 
-from apps.characters.models import Character
+from apps.characters.models import Character, _canonicalize_name
 from apps.characters.types import CharacterPayload
 
 
@@ -16,6 +16,7 @@ def upsert_character(payload: CharacterPayload) -> Character:
     name = payload.get("name")
     if not name:
         raise ValueError("CharacterPayload requires non-empty 'name'")
+    name = _canonicalize_name(name)
     defaults = {k: v for k, v in payload.items() if k != "name"}
 
     try:

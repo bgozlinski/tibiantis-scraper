@@ -5,7 +5,7 @@ from django.utils import timezone
 from django.db import transaction
 
 from apps.bedmages.models import BedmageWatch
-from apps.characters.models import Character
+from apps.characters.models import Character, _canonicalize_name
 from apps.accounts.models import User
 from apps.notifications import get_bedmage_handler
 
@@ -21,6 +21,7 @@ def add_bedmage_watch(user: User, character_name: str) -> BedmageWatch:
     lazy fetch — first scrape will populate Character.last_login
     via the next Beat fire of scrape_watched_characters.
     """
+    character_name = _canonicalize_name(character_name)
     character, _ = Character.objects.get_or_create(name=character_name)
 
     with transaction.atomic():
@@ -50,6 +51,7 @@ def remove_bedmage_watch(user: User, character_name: str) -> bool:
     §4.2 design decision: hard delete (not soft via active=False) — M5 doesn't
     need watch history; unique_together resets cycle cleanly on re-add.
     """
+    character_name = _canonicalize_name(character_name)
     deleted_count, _ = BedmageWatch.objects.filter(
         user=user,
         character__name=character_name,

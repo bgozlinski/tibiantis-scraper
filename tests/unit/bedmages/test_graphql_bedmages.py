@@ -162,12 +162,12 @@ async def test_add_bedmage_watch_creates_character_lazily() -> None:
     step required from the client.
     """
     _, bearer = await _make_user_and_token("alice")
-    pre_count = await sync_to_async(Character.objects.filter(name="NewChar").count)()
+    pre_count = await sync_to_async(Character.objects.filter(name="Newchar").count)()
     assert pre_count == 0
 
     mutation = """
     mutation {
-        addBedmageWatch(characterName: "NewChar") {
+        addBedmageWatch(characterName: "Newchar") {
             character { name }
         }
     }
@@ -176,9 +176,9 @@ async def test_add_bedmage_watch_creates_character_lazily() -> None:
     payload = await _post_query(AsyncClient(), mutation, bearer)
 
     assert "errors" not in payload, payload
-    assert payload["data"]["addBedmageWatch"]["character"]["name"] == "NewChar"
+    assert payload["data"]["addBedmageWatch"]["character"]["name"] == "Newchar"
 
-    post_count = await sync_to_async(Character.objects.filter(name="NewChar").count)()
+    post_count = await sync_to_async(Character.objects.filter(name="Newchar").count)()
     assert post_count == 1
 
 

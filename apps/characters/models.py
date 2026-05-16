@@ -1,5 +1,29 @@
+from typing import Any
+
 from django.db import models
-from django.db.models import PositiveIntegerField, CharField, DateTimeField
+from django.db.models import (
+    CharField,
+    DateTimeField,
+    PositiveIntegerField,
+    UniqueConstraint,
+)
+from django.db.models.functions import Lower
+
+
+def _canonicalize_name(name: str) -> str:
+    """Return canonical form of a Tibia character name: first-letter-upper,
+    rest-lower, with surrounding whitespace stripped.
+
+    Per M10 spec §3.4 — explicit primitive, NOT str.capitalize(). Tibia names
+    today are ASCII so the two produce the same result, but the spec locks
+    the explicit form because the intent ('uppercase the first letter only')
+    is clearer and the behaviour is independent of Python's locale-aware
+    capitalize().
+    """
+    s = name.strip()
+    if not s:
+        return s
+    return s[0].upper() + s[1:].lower()
 
 
 class Character(models.Model):
@@ -17,6 +41,17 @@ class Character(models.Model):
 
     class Meta:
         ordering = ["-level"]
+        constraints = [
+            UniqueConstraint(
+                Lower("name"),
+                name="character_name_lower_unique",
+            ),
+        ]
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if self.name:
+            self.name = _canonicalize_name(self.name)
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"{self.name} (level {self.level})"
