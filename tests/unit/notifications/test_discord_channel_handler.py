@@ -79,29 +79,93 @@ def test_handler_announce_calls_client_send_channel_message_with_embed(
     assert "content" not in call_kwargs or call_kwargs.get("content") is None
 
 
-def test_handler_announce_renders_embed_with_character_level_killed_by_color(
+def test_handler_announce_renders_embed_with_hyperlinked_title_and_info_description(
     death_event: MagicMock,
     discord_channel: MagicMock,
     mock_client: MagicMock,
 ) -> None:
-    """Embed shape contract — 4 keys with specific semantics:
+    """Embed shape contract post-#178 — character name as a clickable embed
+    title (via `url` field), info lines in `description`.
 
-    - `title`: 💀 + character name + level in parens (visible card heading)
-    - `description`: killed_by raw text (Discord renders body)
-    - `timestamp`: ISO 8601 with TZ (Discord parses + displays in user's TZ)
+    Pinned fields:
+    - `title`: raw character name (no emoji prefix, no level suffix)
+    - `url`: Tibiantis online character page, URL-encoded via quote_plus
+      so Discord renders the title as a clickable hyperlink
+    - `description`: three lines — `Died at level N` / `YYYY-MM-DD HH:MM:SS`
+      / `Killed by: <killed_by>`
     - `color`: integer `0xDC143C` (crimson) — Pułapka C, NOT hex string
+    - `timestamp`: removed (was: ISO 8601 string consumed by Discord as
+      a footer). The wall-clock time is in `description` now; the embed
+      footer rendered in viewer's local TZ would have shown a different
+      value, confusing operators.
 
-    Locks each field separately so a future refactor of one (e.g. localizing
-    "level" to "lvl") doesn't silently break the others.
+    Locks each field separately so a future refactor of one (e.g.
+    localizing "level" to "lvl") doesn't silently break the others.
     """
     DiscordChannelHandler().announce(death_event, discord_channel)
 
     embed = mock_client.send_channel_message.call_args.kwargs["embed"]
-    assert embed["title"] == "💀 Yhral (level 60)"
-    assert embed["description"] == "a dragon lord"
-    assert embed["timestamp"] == "2026-05-15T14:30:00+00:00"
+    assert embed["title"] == "Yhral"
+    assert embed["url"] == "https://www.tibiantis.online/?page=character&name=Yhral"
+    assert embed["description"] == (
+        "Died at level 60\n" "2026-05-15 14:30:00\n" "Killed by: a dragon lord"
+    )
     assert embed["color"] == 0xDC143C
     assert isinstance(embed["color"], int)  # Pułapka C — int, not "0xDC143C"
+    assert (
+        "timestamp" not in embed
+    )  # removed by #178; wall-clock now lives in description
+
+
+def test_handler_announce_renders_unknown_when_killed_by_is_empty(
+    death_event: MagicMock,
+    discord_channel: MagicMock,
+    mock_client: MagicMock,
+) -> None:
+    """Empty `killed_by` (the model default for un-parsed kill messages)
+    renders as `Killed by: unknown` in description.
+
+    The model has `killed_by = TextField(blank=True, default="")` so the
+    scraper can store "" when it can't parse the kill cause from the
+    Tibiantis deaths page. The notification should not say `Killed by: `
+    with an empty trailer — that would look like a parser bug to operators.
+    `"unknown"` is the post-#178 friendly fallback (shorter than the prior
+    `"Cause unknown"` which was a full standalone description).
+    """
+    death_event.killed_by = ""
+
+    DiscordChannelHandler().announce(death_event, discord_channel)
+
+    embed = mock_client.send_channel_message.call_args.kwargs["embed"]
+    assert "Killed by: unknown" in embed["description"]
+
+
+def test_handler_announce_urlencodes_space_in_character_name(
+    death_event: MagicMock,
+    discord_channel: MagicMock,
+    mock_client: MagicMock,
+) -> None:
+    """Character names with spaces produce `+`-encoded URLs.
+
+    Tibiantis's character-page URL uses `application/x-www-form-urlencoded`
+    style (`+` for space), and `urllib.parse.quote_plus` produces exactly
+    that. A name like `Im Bluee` must yield `name=Im+Bluee`, not
+    `name=Im%20Bluee` (which the Tibiantis page does also accept but isn't
+    the canonical form linked from the site itself) and not `name=Im Bluee`
+    (which Discord may render as a broken link).
+
+    Defensive against future names with other special chars — `quote_plus`
+    handles `%XX` encoding for those too.
+    """
+    death_event.character_name = "Im Bluee"
+
+    DiscordChannelHandler().announce(death_event, discord_channel)
+
+    embed = mock_client.send_channel_message.call_args.kwargs["embed"]
+    assert embed["url"] == "https://www.tibiantis.online/?page=character&name=Im+Bluee"
+    assert (
+        embed["title"] == "Im Bluee"
+    )  # title text keeps the space; only URL encodes it
 
 
 def test_handler_announce_returns_false_on_send_failure(
