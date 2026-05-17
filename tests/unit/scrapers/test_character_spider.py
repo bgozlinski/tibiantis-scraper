@@ -266,7 +266,10 @@ def test_item_fields_match_model_fields() -> None:
     model_fields = {
         f.name
         for f in Character._meta.fields
-        if f.name not in {"id", "last_scraped_at"}  # auto-managed, not scraped
+        # auto-managed orchestration metadata, not scraped from tibiantis.online:
+        # - last_scraped_at: auto_now=True, set on every Character.save()
+        # - last_deaths_scraped_at: updated by deathwatch Celery task (DW-5), not spider
+        if f.name not in {"id", "last_scraped_at", "last_deaths_scraped_at"}
     }
 
     assert item_fields == model_fields, (

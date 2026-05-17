@@ -55,6 +55,7 @@ LOCAL_APPS: list[str] = [
     "apps.accounts",
     "apps.deaths",
     "apps.bedmages",
+    "apps.deathwatch",
     "apps.notifications",
     "apps.core",
     "discord_bot",
