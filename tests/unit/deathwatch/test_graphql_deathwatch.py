@@ -1,4 +1,4 @@
-"""Tests for myDeathWatches / watchedDeaths queries + DW mutations (DW-8).
+"""Tests for deathwatches / watchedDeaths queries + DW mutations.
 
 Mirror of `tests/unit/bedmages/test_graphql_bedmages.py`: JWT auth via
 `AccessToken.for_user`, AsyncClient against /graphql/, async resolvers
@@ -60,44 +60,63 @@ async def _make_user_and_token(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# myDeathWatches query
+# deathwatches query (M12 follow-up — public list visibility)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_my_death_watches_filters_by_request_user() -> None:
-    """Security invariant — never leak other users' deathwatch subscriptions."""
+async def test_deathwatches_returns_watches_from_all_users() -> None:
+    """Public list visibility (spec §3.4) — alice sees bob's watches too."""
     user_a, bearer_a = await _make_user_and_token("alice")
     user_b, _ = await _make_user_and_token("bob")
 
     def _seed() -> None:
         c1 = Character.objects.create(name="Yhral")
         c2 = Character.objects.create(name="Bubble")
-        c3 = Character.objects.create(name="Otherusers")
         DeathWatch.objects.create(user=user_a, character=c1)
-        DeathWatch.objects.create(user=user_a, character=c2)
-        DeathWatch.objects.create(user=user_b, character=c3)
+        DeathWatch.objects.create(user=user_b, character=c2)
 
     await sync_to_async(_seed)()
 
     payload = await _post(
         AsyncClient(),
-        "{ myDeathWatches { id character { name } active } }",
+        "{ deathwatches { character { name } } }",
         bearer_a,
     )
 
     assert "errors" not in payload, payload
-    watches = payload["data"]["myDeathWatches"]
-    assert len(watches) == 2
-    names = sorted(w["character"]["name"] for w in watches)
+    names = sorted(w["character"]["name"] for w in payload["data"]["deathwatches"])
     assert names == ["Bubble", "Yhral"]
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_my_death_watches_requires_authentication() -> None:
-    payload = await _post(AsyncClient(), "{ myDeathWatches { id } }", bearer=None)
+async def test_deathwatches_exposes_added_by_discord_id() -> None:
+    """Resolved field `addedByDiscordId` returns watch.user.discord_id (spec §4.4)."""
+    user, bearer = await _make_user_and_token("alice")
+    user.discord_id = "99999"
+    await sync_to_async(user.save)(update_fields=["discord_id"])
+    char = await sync_to_async(Character.objects.create)(name="Yhral")
+    await sync_to_async(DeathWatch.objects.create)(user=user, character=char)
+
+    payload = await _post(
+        AsyncClient(),
+        "{ deathwatches { addedByDiscordId character { name } } }",
+        bearer,
+    )
+
+    assert "errors" not in payload, payload
+    data = payload["data"]["deathwatches"]
+    assert len(data) == 1
+    assert data[0]["addedByDiscordId"] == "99999"
+    assert data[0]["character"]["name"] == "Yhral"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_deathwatches_requires_authentication() -> None:
+    payload = await _post(AsyncClient(), "{ deathwatches { id } }", bearer=None)
     assert "errors" in payload
     msg = payload["errors"][0]["message"]
     assert "auth" in msg.lower()
@@ -105,11 +124,12 @@ async def test_my_death_watches_requires_authentication() -> None:
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_my_death_watches_returns_empty_list_for_user_without_watches() -> None:
-    _, bearer = await _make_user_and_token("nobody")
-    payload = await _post(AsyncClient(), "{ myDeathWatches { id } }", bearer)
+async def test_deathwatches_returns_empty_list_when_no_watches() -> None:
+    """Empty system → empty list, NOT errors. Distinguishes "no data" from auth fail."""
+    _, bearer = await _make_user_and_token("anyone")
+    payload = await _post(AsyncClient(), "{ deathwatches { id } }", bearer)
     assert "errors" not in payload, payload
-    assert payload["data"]["myDeathWatches"] == []
+    assert payload["data"]["deathwatches"] == []
 
 
 # ═══════════════════════════════════════════════════════════════════════════
