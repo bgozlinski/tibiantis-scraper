@@ -9,7 +9,7 @@ from apps.characters.models import Character
 from apps.deathwatch.models import DeathWatch, DeathWatchChannel, WatchedDeathEvent
 from apps.deathwatch.services import (
     add_death_watch,
-    list_death_watches,
+    list_all_death_watches,
     record_watched_death,
     remove_death_watch,
     set_deathwatch_channel_for_guild,
@@ -116,25 +116,43 @@ def test_remove_death_watch_canonicalizes_name() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# list_death_watches
+# list_all_death_watches (public visibility — M12 follow-up)
 # ──────────────────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.django_db
-def test_list_death_watches_filters_by_user_and_orders_newest_first() -> None:
+def test_list_all_death_watches_returns_all_users_newest_first() -> None:
+    """Public list: every active watch across all users, ordered desc."""
     alice = User.objects.create(username="alice", discord_id="1")
     bob = User.objects.create(username="bob", discord_id="2")
     add_death_watch(alice, "Yhral")
     add_death_watch(bob, "Bubble")
     add_death_watch(alice, "Eternal Oblivion")
 
-    alice_watches = list(list_death_watches(alice))
+    watches = list(list_all_death_watches())
 
     # _canonicalize_name uppercases ONLY the first letter ("Eternal Oblivion"
     # → "Eternal oblivion"). Match canonical form.
-    assert len(alice_watches) == 2
-    assert {w.character.name for w in alice_watches} == {"Yhral", "Eternal oblivion"}
-    assert alice_watches[0].character.name == "Eternal oblivion"
+    assert len(watches) == 3
+    names = [w.character.name for w in watches]
+    # Newest first
+    assert names[0] == "Eternal oblivion"
+    assert set(names) == {"Yhral", "Bubble", "Eternal oblivion"}
+
+
+@pytest.mark.django_db
+def test_list_all_death_watches_excludes_inactive() -> None:
+    """Soft-deactivated watches are excluded — consistent with cap counter."""
+    user = User.objects.create(username="alice", discord_id="1")
+    add_death_watch(user, "Yhral")
+    bubble_watch = add_death_watch(user, "Bubble")
+    bubble_watch.active = False
+    bubble_watch.save(update_fields=["active"])
+
+    watches = list(list_all_death_watches())
+
+    assert len(watches) == 1
+    assert watches[0].character.name == "Yhral"
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -84,14 +84,18 @@ def remove_death_watch(user: User, character_name: str) -> bool:
     return deleted > 0
 
 
-def list_death_watches(user: User) -> QuerySet[DeathWatch]:
-    """List user's watches, newest first, with Character preloaded.
+def list_all_death_watches() -> QuerySet[DeathWatch]:
+    """List all active DeathWatches across all users, newest first.
 
-    `select_related` to avoid N+1 when Discord cog / GraphQL renders names.
+    Public list visibility (M12 follow-up, spec §3.1) — drop per-user filter.
+    `select_related("user", "character")` pre-loads both FK objects so callers
+    can render `watch.user.discord_id` + `watch.character.name` without N+1
+    (Discord cog iterates the QuerySet to build a ~20-entry response, capped
+    by DEATHWATCH_MAX_WATCHED_CHARACTERS).
     """
     return (
-        DeathWatch.objects.filter(user=user)
-        .select_related("character")
+        DeathWatch.objects.filter(active=True)
+        .select_related("user", "character")
         .order_by("-created_at")
     )
 
