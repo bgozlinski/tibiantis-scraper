@@ -287,7 +287,28 @@ W dowolnym kanale lub DM (bot ma slash commands globalnie):
    - albo świadomie zaakceptuj że może nie być deathów przez parę godzin.
 2. `/deathwatch add Yhral` (zamień `Yhral` na real character).
 3. Expected: ephemeral `👀 Now watching \`Yhral\` for new deaths.`
-4. `/deathwatch list` — verify postać widoczna na liście.
+4. `/deathwatch list` — verify postać widoczna. Lista jest **publiczna**
+   (każdy user widzi watches od wszystkich) po PR #206 (M12 follow-up).
+   Output jest **ephemeral** (tylko Ty widzisz w UI, nikt inny w kanale).
+
+   Expected sample output (3 watches, cap 20):
+   ```
+   Active deathwatches (3/20):
+   • `Yhral` (added by <@123>)
+   • `Bubble` (added by <@456>)
+   • `Eternal oblivion` (added by <@123>)
+   ```
+   - `(N/20)` — count unikalnych characters vs `DEATHWATCH_MAX_WATCHED_CHARACTERS`
+     cap (spec §3.5). Reminder że cap jest **shared across all users**.
+   - `<@discord_id>` — Discord mention syntax, renderuje się jako "@alice".
+     **Sanity check:** Discord NIE powinien pingować user'ów przy `/list` —
+     bot wysyła z `allowed_mentions=AllowedMentions.none()` (spec §3.3).
+     Jeśli widzisz @ping → handler routing broken.
+   - Empty state (zero watches w systemie):
+     ```
+     No active deathwatches. Add one with `/deathwatch add <name>`.
+     ```
+
 5. Verify w DB:
    ```bash
    poetry run python manage.py shell -c "from apps.deathwatch.models import DeathWatch; [print(f'{w.user.username} → {w.character.name} (active={w.active}, created_at={w.created_at})') for w in DeathWatch.objects.all()]"
