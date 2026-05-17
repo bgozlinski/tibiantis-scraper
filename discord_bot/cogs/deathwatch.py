@@ -5,10 +5,12 @@ from asgiref.sync import sync_to_async
 import discord
 from discord.ext import commands
 
+from django.conf import settings
+
 from apps.deathwatch.services import set_deathwatch_channel_for_guild
 from discord_bot.services import (
     add_deathwatch_for_discord_user,
-    list_deathwatches_for_discord_user,
+    list_all_deathwatches,
     remove_deathwatch_for_discord_user,
 )
 
@@ -71,17 +73,39 @@ class DeathWatchCog(commands.Cog):
         )
         await ctx.respond(msg, ephemeral=True)
 
-    @deathwatch.command(name="list", description="Show your deathwatch list")
+    @deathwatch.command(name="list", description="Show all active deathwatches")
     async def list(self, ctx: discord.ApplicationContext) -> None:
-        watches = await sync_to_async(list_deathwatches_for_discord_user)(ctx.author.id)
+        """Public list visibility (M12 follow-up).
+
+        Shows EVERY active watch across all users, with `<@discord_id>`
+        mention syntax — Discord renders as "@alice" natively but we pass
+        `AllowedMentions.none()` so listing 20 watches doesn't ping 20 users.
+        Ephemeral response (only caller sees) — explicit user choice in spec §3.6.
+        """
+        watches = await sync_to_async(list_all_deathwatches)()
         if not watches:
             await ctx.respond(
-                "Your deathwatch list is empty. " "Add with `/deathwatch add <name>`.",
+                "No active deathwatches. Add one with `/deathwatch add <name>`.",
                 ephemeral=True,
             )
             return
-        names = ", ".join(f"`{w.character.name}`" for w in watches)
-        await ctx.respond(f"Your deathwatches: {names}", ephemeral=True)
+
+        cap = settings.DEATHWATCH_MAX_WATCHED_CHARACTERS
+        # Unique characters across all watches — matches cap semantics (a
+        # character watched by 2 users counts as 1 toward the global cap).
+        unique_count = len({w.character.name for w in watches})
+
+        lines = [
+            f"• `{w.character.name}` (added by <@{w.user.discord_id or 'unknown'}>)"
+            for w in watches
+        ]
+        body = f"Active deathwatches ({unique_count}/{cap}):\n" + "\n".join(lines)
+
+        await ctx.respond(
+            body,
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
     @deathwatch.command(
         name="channel",

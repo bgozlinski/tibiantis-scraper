@@ -13,7 +13,7 @@ from apps.characters.models import _canonicalize_name
 from apps.deathwatch.models import DeathWatch
 from apps.deathwatch.services import (
     add_death_watch,
-    list_death_watches,
+    list_all_death_watches,
     remove_death_watch,
 )
 
@@ -159,10 +159,11 @@ def remove_deathwatch_for_discord_user(discord_id: int, character_name: str) -> 
     return remove_death_watch(user, character_name)
 
 
-def list_deathwatches_for_discord_user(discord_id: int) -> list[DeathWatch]:
-    """Active deathwatches for user. Empty list when user unknown (no auto-create on read)."""
-    try:
-        user = User.objects.get(discord_id=discord_id)
-    except User.DoesNotExist:
-        return []
-    return list(list_death_watches(user).filter(active=True))
+def list_all_deathwatches() -> list[DeathWatch]:
+    """All active deathwatches across all users (M12 follow-up, public list).
+
+    Wrapper over `apps.deathwatch.services.list_all_death_watches` — returns
+    concrete list (cog awaits via `sync_to_async`, py-cord doesn't consume
+    QuerySets across the sync/async boundary).
+    """
+    return list(list_all_death_watches())

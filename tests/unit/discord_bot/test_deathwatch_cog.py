@@ -154,13 +154,15 @@ async def test_remove_command_idempotent_when_not_on_list(
 
 
 @pytest.mark.asyncio
-async def test_list_command_empty_state(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_list_command_empty_state_when_no_watches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No watches anywhere in the system → hint to add (M12 follow-up)."""
     mock_ctx = MagicMock(spec=discord.ApplicationContext)
-    mock_ctx.author.id = 12345
     mock_ctx.respond = AsyncMock()
 
     monkeypatch.setattr(
-        "discord_bot.cogs.deathwatch.list_deathwatches_for_discord_user",
+        "discord_bot.cogs.deathwatch.list_all_deathwatches",
         MagicMock(return_value=[]),
     )
 
@@ -168,34 +170,121 @@ async def test_list_command_empty_state(monkeypatch: pytest.MonkeyPatch) -> None
     await cog.list.callback(cog, mock_ctx)
 
     args, kwargs = mock_ctx.respond.call_args
-    assert "empty" in args[0].lower()
+    assert "No active deathwatches" in args[0]
+    assert "/deathwatch add" in args[0]
     assert kwargs["ephemeral"] is True
 
 
 @pytest.mark.asyncio
-async def test_list_command_renders_character_names(
+async def test_list_command_renders_all_users_watches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Public list visibility — every user's watches included (spec §3.4)."""
     mock_ctx = MagicMock(spec=discord.ApplicationContext)
-    mock_ctx.author.id = 12345
     mock_ctx.respond = AsyncMock()
 
     w1 = MagicMock()
     w1.character.name = "Yhral"
+    w1.user.discord_id = "111"
     w2 = MagicMock()
     w2.character.name = "Bubble"
+    w2.user.discord_id = "222"
+    w3 = MagicMock()
+    w3.character.name = "Eternal oblivion"
+    w3.user.discord_id = "111"  # alice again
+
     monkeypatch.setattr(
-        "discord_bot.cogs.deathwatch.list_deathwatches_for_discord_user",
-        MagicMock(return_value=[w1, w2]),
+        "discord_bot.cogs.deathwatch.list_all_deathwatches",
+        MagicMock(return_value=[w1, w2, w3]),
     )
 
     cog = DeathWatchCog(bot=MagicMock())
     await cog.list.callback(cog, mock_ctx)
 
     args, kwargs = mock_ctx.respond.call_args
-    assert "Yhral" in args[0]
-    assert "Bubble" in args[0]
+    text = args[0]
+    assert "Yhral" in text
+    assert "Bubble" in text
+    assert "Eternal oblivion" in text
     assert kwargs["ephemeral"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_command_shows_added_by_discord_mention(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each entry includes `<@discord_id>` mention syntax (spec §3.2)."""
+    mock_ctx = MagicMock(spec=discord.ApplicationContext)
+    mock_ctx.respond = AsyncMock()
+
+    w = MagicMock()
+    w.character.name = "Yhral"
+    w.user.discord_id = "99999"
+
+    monkeypatch.setattr(
+        "discord_bot.cogs.deathwatch.list_all_deathwatches",
+        MagicMock(return_value=[w]),
+    )
+
+    cog = DeathWatchCog(bot=MagicMock())
+    await cog.list.callback(cog, mock_ctx)
+
+    args, _ = mock_ctx.respond.call_args
+    assert "<@99999>" in args[0]
+
+
+@pytest.mark.asyncio
+async def test_list_command_uses_allowed_mentions_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """20 mentions w outputie nie mogą pingować users (spec §3.3)."""
+    mock_ctx = MagicMock(spec=discord.ApplicationContext)
+    mock_ctx.respond = AsyncMock()
+
+    w = MagicMock()
+    w.character.name = "Yhral"
+    w.user.discord_id = "1"
+    monkeypatch.setattr(
+        "discord_bot.cogs.deathwatch.list_all_deathwatches",
+        MagicMock(return_value=[w]),
+    )
+
+    cog = DeathWatchCog(bot=MagicMock())
+    await cog.list.callback(cog, mock_ctx)
+
+    _, kwargs = mock_ctx.respond.call_args
+    am = kwargs["allowed_mentions"]
+    # AllowedMentions.none() = no everyone/users/roles pings
+    assert am.everyone is False
+    assert am.users is False
+    assert am.roles is False
+
+
+@pytest.mark.asyncio
+async def test_list_command_shows_count_over_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cap indicator `(N/20)` w outputie (spec §3.5)."""
+    mock_ctx = MagicMock(spec=discord.ApplicationContext)
+    mock_ctx.respond = AsyncMock()
+
+    watches = []
+    for i in range(3):
+        w = MagicMock()
+        w.character.name = f"Char{i}"
+        w.user.discord_id = str(i)
+        watches.append(w)
+
+    monkeypatch.setattr(
+        "discord_bot.cogs.deathwatch.list_all_deathwatches",
+        MagicMock(return_value=watches),
+    )
+
+    cog = DeathWatchCog(bot=MagicMock())
+    await cog.list.callback(cog, mock_ctx)
+
+    args, _ = mock_ctx.respond.call_args
+    assert "3/20" in args[0]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
