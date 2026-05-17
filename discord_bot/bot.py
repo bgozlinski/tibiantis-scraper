@@ -40,10 +40,13 @@ def setup_bot() -> discord.Bot:
     multiple times (tests share the module-level bot singleton)."""
     from discord_bot.cogs.bedmages import BedmageCog
     from discord_bot.cogs.deaths import DeathsCog
+    from discord_bot.cogs.deathwatch import DeathWatchCog
 
     if "BedmageCog" not in bot.cogs:
         bot.add_cog(BedmageCog(bot))
     if "DeathsCog" not in bot.cogs:
         bot.add_cog(DeathsCog(bot))
+    if "DeathWatchCog" not in bot.cogs:
+        bot.add_cog(DeathWatchCog(bot))
 
     return bot
