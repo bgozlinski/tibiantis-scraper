@@ -73,11 +73,17 @@ def test_handler_renders_message_with_character_name_regen_minutes_and_last_logi
     watch: MagicMock, mock_client: MagicMock, settings: pytest.FixtureRequest
 ) -> None:
     """Message template includes: 🛏️ emoji, character name (bolded), regen minutes
-    from settings (NOT hardcoded), and last_login formatted as `YYYY-MM-DD HH:MM UTC`.
+    from settings (NOT hardcoded), and last_login formatted in Europe/Warsaw
+    local time (no TZ suffix).
 
     Pułapka C from #129 — using `settings.BEDMAGE_REGEN_MINUTES` (current value,
     not hardcoded "100"). Test overrides the setting and verifies the rendered
     string reflects the override, locking the dynamic-read contract.
+
+    Post-#184: fixture's last_login = 2026-05-15 10:00 UTC; in CEST (UTC+2, May)
+    that's 12:00 Europe/Warsaw. The literal `" UTC"` suffix was dropped — the
+    displayed time is now in Polish local without a TZ marker (matches the
+    operator's mental model of "what tibiantis.online showed").
     """
     settings.BEDMAGE_REGEN_MINUTES = 90  # type: ignore[attr-defined]
 
@@ -87,7 +93,33 @@ def test_handler_renders_message_with_character_name_regen_minutes_and_last_logi
     assert "🛏️" in content
     assert "**Yhral**" in content
     assert "90" in content  # not 100 — proves the setting is read dynamically
-    assert "2026-05-15 10:00 UTC" in content
+    assert "Last login: 2026-05-15 12:00" in content  # CEST = UTC+2, May
+    assert "UTC" not in content  # post-#184: no TZ suffix in last_login display
+
+
+def test_handler_renders_last_login_in_europe_warsaw_during_winter(
+    watch: MagicMock, mock_client: MagicMock
+) -> None:
+    """Winter (CET = UTC+1) DST handling — bedmage DM time renders correctly
+    outside summer time.
+
+    Guards against a "fix" using hardcoded `+timedelta(hours=2)` instead of
+    `zoneinfo.ZoneInfo("Europe/Warsaw")`. A constant-offset fix would be wrong
+    half the year (Oct→Mar = CET, UTC+1) and at the two annual DST transition
+    Sundays. Mirrors test_handler_announce_renders_died_at_in_europe_warsaw_during_winter
+    in test_discord_channel_handler.py for the death-notification handler.
+
+    Fixture override: last_login = 2026-12-10 14:30 UTC → Europe/Warsaw 15:30 (CET).
+    """
+    from datetime import datetime, timezone
+
+    watch.character.last_login = datetime(2026, 12, 10, 14, 30, 0, tzinfo=timezone.utc)
+
+    DiscordDMHandler().notify(watch)
+
+    content = mock_client.send_dm.call_args.args[1]
+    assert "Last login: 2026-12-10 15:30" in content  # CET = UTC+1, December
+    assert "Last login: 2026-12-10 14:30" not in content  # raw UTC must NOT leak
 
 
 def test_handler_logs_error_and_skips_send_when_discord_id_is_none(
