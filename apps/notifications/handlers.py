@@ -69,12 +69,27 @@ class DiscordDMHandler:
             )
 
     def _render(self, watch: BedmageWatch) -> str:
+        """Render bedmage notification DM body.
+
+        Per #184: `last_login` converted from UTC (DB storage) to Europe/Warsaw
+        before formatting, matching #180/#181's death-notification fix. The
+        literal `" UTC"` suffix was dropped — operators saw 1-2h offset vs
+        their local clock and the tibiantis.online "Last login" display.
+        """
         from django.conf import settings
 
+        # Invariant: services.check_bedmage_watches_for_character early-returns
+        # when character.last_login is None, so by the time the handler runs
+        # the field is non-None. Assert documents this + narrows the type
+        # (DateTimeField(null=True) → datetime | None in stubs).
+        assert watch.character.last_login is not None
+        last_login_local = watch.character.last_login.astimezone(
+            ZoneInfo("Europe/Warsaw")
+        )
         return (
             f"🛏️ Your bedmage **{watch.character.name}** has been logged out for "
             f"{settings.BEDMAGE_REGEN_MINUTES} minutes — mana fully regenerated.\n"
-            f"Last login: {watch.character.last_login:%Y-%m-%d %H:%M UTC}"
+            f"Last login: {last_login_local:%Y-%m-%d %H:%M}"
         )
 
 
