@@ -1,7 +1,9 @@
-import scrapy
-from scrapers.tibiantis_scrapers.items import CharacterItem
 from datetime import datetime
-from zoneinfo import ZoneInfo
+
+import scrapy
+
+from scrapers.tibiantis_scrapers.items import CharacterItem
+from scrapers.tibiantis_scrapers.utils.dates import parse_tibiantis_timestamp
 
 
 class CharacterSpider(scrapy.Spider):
@@ -17,11 +19,12 @@ class CharacterSpider(scrapy.Spider):
         self.start_urls = [f"https://tibiantis.online/?page=character&name={name}"]
 
     def _parse_last_login(self, raw: str) -> datetime | None:
-        if not raw or "never" in raw.lower():
-            return None
-        naive_part, _tz = raw.rsplit(" ", 1)  # "CEST" / "CET"
-        dt = datetime.strptime(naive_part, "%d %b %Y %H:%M:%S")
-        return dt.replace(tzinfo=ZoneInfo("Europe/Berlin"))
+        """Thin wrapper kept for backwards-compatibility — tests call this directly.
+
+        Implementation moved to `utils.dates.parse_tibiantis_timestamp` (DW-3)
+        for reuse by `character_deaths_spider`.
+        """
+        return parse_tibiantis_timestamp(raw)
 
     def parse(self, response):
         rows = response.css("table.tabi tr.hover")
