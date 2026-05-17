@@ -203,6 +203,11 @@ BEDMAGE_NOTIFICATION_HANDLER = env(
 DEATHWATCH_MAX_WATCHED_CHARACTERS = env.int(
     "DEATHWATCH_MAX_WATCHED_CHARACTERS", default=20
 )
+# Per-Character freshness threshold for the 1-min deathwatch scrape — skip
+# Characters whose last_deaths_scraped_at is younger than this. 50s default
+# leaves a 10s buffer under the 1-min Beat interval to absorb Celery queueing
+# jitter without re-scraping the same character twice in adjacent cycles.
+DEATHWATCH_FRESHNESS_SECONDS = env.int("DEATHWATCH_FRESHNESS_SECONDS", default=50)
 
 # MongoDB — used ONLY for app_logs / scrape_logs (CLAUDE.md §4).
 # Empty MONGO_URL disables Mongo logging gracefully via NullHandler (spec §3.4).
