@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import urllib.parse
 from typing import TYPE_CHECKING, Protocol, Any
+from zoneinfo import ZoneInfo
 
 if TYPE_CHECKING:
     from apps.bedmages.models import BedmageWatch
@@ -112,10 +113,17 @@ class DiscordChannelHandler:
         info lines (level / wall-clock time / killer). Empty `killed_by` renders
         as "unknown" (the model default for un-parsed kill messages).
 
+        Per #180: `died_at` is converted from UTC (DB storage) to Europe/Warsaw
+        before formatting, so the displayed time matches Polish operator
+        expectation and the tibiantis.info deaths-page time (server-local,
+        Europe/Berlin = same offset as Europe/Warsaw year-round). `zoneinfo`
+        handles DST correctly (CEST/CET transitions at the two annual Sundays).
+
         Embed `timestamp` field intentionally absent — wall-clock time lives in
         `description` now. Discord's footer timestamp would render in viewer's
         local TZ and disagree with the description, confusing operators.
         """
+        died_at_local = death_event.died_at.astimezone(ZoneInfo("Europe/Warsaw"))
         return {
             "title": death_event.character_name,
             "url": (
@@ -124,7 +132,7 @@ class DiscordChannelHandler:
             ),
             "description": (
                 f"Died at level {death_event.level_at_death}\n"
-                f"{death_event.died_at:%Y-%m-%d %H:%M:%S}\n"
+                f"{died_at_local:%Y-%m-%d %H:%M:%S}\n"
                 f"Killed by: {death_event.killed_by or 'unknown'}"
             ),
             "color": 0xDC143C,  # crimson
