@@ -107,8 +107,10 @@ def test_handler_announce_renders_embed_with_hyperlinked_title_and_info_descript
     embed = mock_client.send_channel_message.call_args.kwargs["embed"]
     assert embed["title"] == "Yhral"
     assert embed["url"] == "https://www.tibiantis.online/?page=character&name=Yhral"
+    # Fixture's died_at is 2026-05-15 14:30 UTC; in CEST (UTC+2, May) that's
+    # 16:30 Europe/Warsaw — the post-#180 expected display.
     assert embed["description"] == (
-        "Died at level 60\n" "2026-05-15 14:30:00\n" "Killed by: a dragon lord"
+        "Died at level 60\n2026-05-15 16:30:00\nKilled by: a dragon lord"
     )
     assert embed["color"] == 0xDC143C
     assert isinstance(embed["color"], int)  # Pułapka C — int, not "0xDC143C"
@@ -166,6 +168,34 @@ def test_handler_announce_urlencodes_space_in_character_name(
     assert (
         embed["title"] == "Im Bluee"
     )  # title text keeps the space; only URL encodes it
+
+
+def test_handler_announce_renders_died_at_in_europe_warsaw_during_winter(
+    death_event: MagicMock,
+    discord_channel: MagicMock,
+    mock_client: MagicMock,
+) -> None:
+    """Winter (CET = UTC+1) DST handling — death timestamps render correctly
+    outside summer time.
+
+    Guards against someone "fixing" #180 by hardcoding `+ timedelta(hours=2)`
+    instead of using `zoneinfo.ZoneInfo("Europe/Warsaw")`. A constant-offset
+    fix would be wrong half the year (Oct→Mar = CET, UTC+1) and at the two
+    annual DST transition Sundays.
+
+    UTC 14:30 on Dec 10 → Europe/Warsaw 15:30 (CET = UTC+1). Pre-#180 the
+    display showed 14:30 (raw UTC). The companion summer test
+    (..._hyperlinked_title_and_info_description) covers CEST (UTC+2).
+    """
+    death_event.died_at = datetime(2026, 12, 10, 14, 30, 0, tzinfo=timezone.utc)
+
+    DiscordChannelHandler().announce(death_event, discord_channel)
+
+    embed = mock_client.send_channel_message.call_args.kwargs["embed"]
+    assert "2026-12-10 15:30:00" in embed["description"]
+    assert (
+        "2026-12-10 14:30:00" not in embed["description"]
+    )  # the UTC value must NOT leak
 
 
 def test_handler_announce_returns_false_on_send_failure(
