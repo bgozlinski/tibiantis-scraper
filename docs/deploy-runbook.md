@@ -171,7 +171,9 @@ In browser: http://localhost:3001 → Uptime Kuma setup wizard.
 
 ## §7 Rolling update
 
-After CI pushes to master (new `:master` tag in Docker Hub):
+**Post-#182, rolling update is automatic on master push.** The `deploy:` job in `.github/workflows/docker.yml` SSHes to the VM and runs `docker compose pull && up -d` after `build:` completes. Discord webhook (`DISCORD_DEPLOY_WEBHOOK_URL`) posts ✅/❌ to the dev guild. See §11.
+
+Manual update still works (use this if auto-deploy is disabled, or for ad-hoc redeploys):
 
 ```bash
 ssh deploy@<hetzner-ip>
@@ -296,3 +298,71 @@ Optional add-ons (M-future):
 - Hetzner backups: +20% of server cost (~1.20€/mc)
 - Static IPv4 reservation: ~1€/mc
 - Off-site backup storage (Backblaze B2): ~$0.005/GB/mc
+
+## §11 Auto-deploy via GitHub Actions (#182)
+
+After PR #182, every push to `master` triggers an automatic deploy. The flow:
+
+1. `build` job in `.github/workflows/docker.yml` builds + pushes the new image to Docker Hub (`bgozl/tibiantis-scraper:master` + `:sha-<short>`)
+2. `deploy` job SSHes to the Hetzner VM as the `deploy` user and runs `docker compose pull && docker compose up -d`
+3. Post-deploy, the `deploy` job polls `http://localhost:8000/health/` for up to 60s (12 × 5s). Failure exits non-zero → job marked failed
+4. `notify` job (runs `if: always()`) posts the outcome to the Discord webhook: ✅ on success, ❌ on failure with a link to the GHA run
+
+### Required secrets
+
+| Secret | Value |
+|---|---|
+| `HETZNER_HOST` | VM IPv4 (currently `178.105.122.18`) |
+| `HETZNER_USER` | `deploy` |
+| `HETZNER_SSH_KEY` | Dedicated ed25519 private key (NOT the operator's daily-driver key). Pubkey appended to `/home/deploy/.ssh/authorized_keys` on the VM |
+| `DISCORD_DEPLOY_WEBHOOK_URL` | Webhook URL for the dev guild `#ci` (or chosen) channel |
+
+Set via `gh secret set <NAME>` (interactive for the webhook URL to avoid shell history).
+
+### Disable temporarily
+
+Two options:
+
+**Option A (surgical):** delete the secrets the deploy job depends on — the workflow will fail at the SSH step and the notify step will fire ❌, but no actual deploy attempt happens because the SSH action can't authenticate.
+
+```bash
+gh secret delete HETZNER_SSH_KEY
+# Re-set later when ready to resume auto-deploy
+```
+
+**Option B (clean):** comment out the `deploy:` and `notify:` jobs in `.github/workflows/docker.yml` on a quick PR. The `build:` job continues pushing images to Docker Hub but nothing happens on the VM until you `docker compose pull && up -d` manually (see §7).
+
+### Rotate the deploy SSH key
+
+If the key is suspected compromised:
+
+```bash
+# On laptop — generate new key
+ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/tibiantis_deploy_ed25519_new -N ""
+
+# Append new pubkey to VM
+cat ~/.ssh/tibiantis_deploy_ed25519_new.pub | ssh deploy@<vm-ip> 'cat >> ~/.ssh/authorized_keys'
+
+# Remove old pubkey from VM authorized_keys (edit manually)
+ssh deploy@<vm-ip>
+nano ~/.ssh/authorized_keys
+# Delete the line ending in "github-actions-deploy" (old key)
+# Save + exit
+
+# Update GHA secret with new private key
+gh secret set HETZNER_SSH_KEY < ~/.ssh/tibiantis_deploy_ed25519_new
+
+# Verify next deploy works
+git commit --allow-empty -m "chore: trigger deploy after key rotation"
+git push origin master
+# Watch the run in GHA UI + Discord channel
+```
+
+### Rotate the Discord webhook URL
+
+If the URL leaked (it's a bearer-token-style credential):
+
+1. Discord → channel settings → Integrations → Webhooks → delete the leaked webhook
+2. Create a new one in the same channel, copy URL
+3. `gh secret set DISCORD_DEPLOY_WEBHOOK_URL` (interactive paste)
+4. Next deploy uses the new URL automatically
