@@ -42,6 +42,23 @@ class DeathWatchType:
     active: auto
     character: CharacterType
 
+    @strawberry.field
+    def added_by_discord_id(self) -> str:
+        """Discord ID of the user who added this watch (spec §3.2 / §4.4).
+
+        Returns User.discord_id raw — frontend renders as wants (Discord
+        `<@id>` mention in bot output, plain string elsewhere). Empty
+        string if user has no linked Discord (manual Django admin user).
+
+        `self.user` is a Django FK that Strawberry-Django doesn't expose in
+        the generated type signature (we didn't list `user: auto` because we
+        don't want to leak User to GraphQL), so mypy can't see it — runtime
+        is fine because Strawberry-Django wraps the underlying DeathWatch
+        model. Resolver runs in async context, so we pre-loaded `user` via
+        `select_related("user", "character")` in the resolver QuerySet.
+        """
+        return self.user.discord_id or ""  # type: ignore[attr-defined]
+
 
 @strawberry_django.type(WatchedDeathEvent)
 class WatchedDeathEventType:
@@ -84,11 +101,17 @@ def _require_superuser(info: strawberry.Info) -> User:
 @strawberry.type
 class Query:
     @strawberry.field
-    async def my_death_watches(self, info: strawberry.Info) -> list[DeathWatchType]:
-        user = _require_auth(info)
+    async def deathwatches(self, info: strawberry.Info) -> list[DeathWatchType]:
+        """All active deathwatches across all users (M12 follow-up).
+
+        Public list — every authenticated client sees every watch + added_by_discord_id.
+        Spec §3.4 — semantic break from M12 `myDeathWatches` (per-user filter).
+        Project has no external GraphQL consumers, so breaking rename OK.
+        """
+        _require_auth(info)
         qs = (
-            DeathWatch.objects.filter(user=user)
-            .select_related("character")
+            DeathWatch.objects.filter(active=True)
+            .select_related("user", "character")
             .order_by("-created_at")
         )
         return cast("list[DeathWatchType]", [w async for w in qs])
