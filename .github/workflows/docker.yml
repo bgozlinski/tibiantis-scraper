@@ -50,3 +50,64 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    # Auto-deploy the newly-pushed :master image to Hetzner VM (#182). Fires
+    # only on push to master (not on PRs, not on tags) after the build job
+    # succeeds. SSH into the VM as the dedicated `deploy` user and run
+    # `docker compose pull && up -d`. Health-check polling at the end fails
+    # the job if the new stack doesn't return 200 on /health/ within 60s.
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      - name: SSH + docker compose pull && up -d
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: ${{ secrets.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/tibiantis
+            docker compose pull
+            docker compose up -d
+            # Wait for /health/ to return 200 — up to 60s total (12 × 5s).
+            # Covers the migrate one-shot + web boot. Failure here marks the
+            # deploy job as failed; the notify job below catches it.
+            for i in $(seq 1 12); do
+              if curl --max-time 5 -fsS http://localhost:8000/health/ >/dev/null; then
+                echo "Health check OK after ${i} attempts"
+                exit 0
+              fi
+              sleep 5
+            done
+            echo "Health check failed after 60s"
+            exit 1
+
+  notify:
+    # Post deploy outcome to Discord webhook. `if: always()` so failures are
+    # reported too — `needs.deploy.result` distinguishes success/failure.
+    # Gated by the same master-push condition as deploy so PR builds don't
+    # produce noise.
+    needs: deploy
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Discord
+        env:
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          WEBHOOK_URL: ${{ secrets.DISCORD_DEPLOY_WEBHOOK_URL }}
+        run: |
+          if [ "${DEPLOY_RESULT}" = "success" ]; then
+            STATUS="✅ Deployed"
+            COLOR=3066993
+          else
+            STATUS="❌ Deploy failed"
+            COLOR=15158332
+          fi
+          SHA_SHORT="${GITHUB_SHA:0:7}"
+          RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -fsS -H "Content-Type: application/json" \
+            -d "{\"embeds\":[{\"title\":\"${STATUS} sha-${SHA_SHORT} to prod\",\"url\":\"${RUN_URL}\",\"color\":${COLOR}}]}" \
+            "${WEBHOOK_URL}"
