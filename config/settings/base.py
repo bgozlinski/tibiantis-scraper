@@ -208,6 +208,13 @@ DEATHWATCH_MAX_WATCHED_CHARACTERS = env.int(
 # leaves a 10s buffer under the 1-min Beat interval to absorb Celery queueing
 # jitter without re-scraping the same character twice in adjacent cycles.
 DEATHWATCH_FRESHNESS_SECONDS = env.int("DEATHWATCH_FRESHNESS_SECONDS", default=50)
+# Handler swap point (DW-6) — mirrors BEDMAGE_NOTIFICATION_HANDLER /
+# DEATH_NOTIFICATION_HANDLER. Default ships real Discord dispatch; tests use
+# DeathWatchLoggingHandler via @override_settings or env override.
+DEATHWATCH_NOTIFICATION_HANDLER = env(
+    "DEATHWATCH_NOTIFICATION_HANDLER",
+    default="apps.notifications.handlers.DeathWatchChannelHandler",
+)
 
 # MongoDB — used ONLY for app_logs / scrape_logs (CLAUDE.md §4).
 # Empty MONGO_URL disables Mongo logging gracefully via NullHandler (spec §3.4).

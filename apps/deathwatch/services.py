@@ -155,9 +155,51 @@ def record_watched_death(item: dict[str, Any]) -> WatchedDeathEvent | None:
 def notify_watched_deaths_for_character(character: Character) -> int:
     """Dispatch pending WatchedDeathEvents for character via configured handler.
 
-    DW-2 STUB: returns 0. DW-6 will plug in DeathWatchAnnouncementHandler
-    with multi-channel iteration and atomic flag-set-on-full-success.
-    Kept in DW-2 so DW-5 (Celery task) can import it without ImportError.
+    Multi-channel iteration (§3.9): an event fans out to every configured
+    `DeathWatchChannel` row. The `announced_on_discord` flag is set ONLY when
+    every channel returns True (§3.13 — partial failure leaves the flag false
+    so the next task fire retries on all channels). This trades duplicate
+    posts on healthy channels for at-least-once delivery on unhealthy ones —
+    acceptable for MVP, follow-up §9.5 plans per-channel tracking.
+
+    Returns count of events fully announced this call (for task summary).
     """
-    # TODO(DW-6): wire up DeathWatchAnnouncementHandler — see spec §3.9, §3.13.
-    return 0
+    from apps.deathwatch.models import DeathWatchChannel
+    from apps.notifications import get_deathwatch_handler
+
+    channels = list(DeathWatchChannel.objects.all())
+    if not channels:
+        # No channel configured (admin hasn't run /deathwatch channel yet).
+        # Pending events stay with announced_on_discord=False and will fire
+        # next time a channel exists — acceptable backlog per spec §5 edge.
+        return 0
+
+    handler = get_deathwatch_handler()
+    fired = 0
+
+    events = WatchedDeathEvent.objects.filter(
+        character=character, announced_on_discord=False
+    ).select_related("character")
+
+    for event in events:
+        all_channels_ok = True
+        for channel in channels:
+            try:
+                if not handler.announce(event, channel):
+                    all_channels_ok = False
+            except Exception:
+                # Isolate per-channel failure — one channel's 5xx must not
+                # short-circuit dispatch to the others (spec §3.9).
+                logger.exception(
+                    "deathwatch announce raised for event=%s channel=%s",
+                    event.pk,
+                    channel.pk,
+                )
+                all_channels_ok = False
+
+        if all_channels_ok:
+            event.announced_on_discord = True
+            event.save(update_fields=["announced_on_discord"])
+            fired += 1
+
+    return fired
