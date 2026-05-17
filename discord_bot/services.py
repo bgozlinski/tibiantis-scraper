@@ -10,6 +10,12 @@ from discord_bot.models import DiscordChannel
 from apps.bedmages.models import BedmageWatch
 from apps.bedmages.services import add_bedmage_watch, remove_bedmage_watch
 from apps.characters.models import _canonicalize_name
+from apps.deathwatch.models import DeathWatch
+from apps.deathwatch.services import (
+    add_death_watch,
+    list_death_watches,
+    remove_death_watch,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,3 +111,58 @@ def list_bedmages_for_discord_user(discord_id: int) -> list[BedmageWatch]:
     return list(
         BedmageWatch.objects.filter(user=user, active=True).select_related("character")
     )
+
+
+# ─── DeathWatch (DW-7) ──────────────────────────────────────────────────────
+# Mirror of the bedmage wrappers above: auto-create User + delegate to the
+# domain service in apps.deathwatch.services. Discord-cog-facing entry points
+# stay in discord_bot/* per project convention.
+
+
+def add_deathwatch_for_discord_user(
+    discord_id: int, discord_username: str, character_name: str
+) -> tuple[DeathWatch, bool]:
+    """Auto-create User + delegate to apps.deathwatch.services.add_death_watch.
+
+    Returns (watch, created). `created=False` means the watch was already on
+    the user's list — same idempotent-ack pattern as
+    `add_bedmage_for_discord_user`. Caller renders different copy for the two
+    cases. Canonicalize at entry so the recovery .get() below matches the row
+    actually stored (Character.save() canonicalizes on its side too).
+
+    Cap exceeded (`ValueError("cap of N unique characters exceeded")`) is
+    re-raised — the cog catches it and surfaces a user-friendly message,
+    NOT a stack trace (CLAUDE.md §8).
+    """
+    user, _ = get_or_create_user_by_discord_id(discord_id, discord_username)
+    character_name = _canonicalize_name(character_name)
+    try:
+        watch = add_death_watch(user, character_name)
+        return watch, True
+    except ValueError as exc:
+        # Two ValueError flavors from add_death_watch:
+        # 1. "already active" → idempotent; return existing watch
+        # 2. "cap of N unique characters exceeded" → re-raise for cog to surface
+        if "already active" in str(exc):
+            watch = DeathWatch.objects.get(user=user, character__name=character_name)
+            return watch, False
+        raise
+
+
+def remove_deathwatch_for_discord_user(discord_id: int, character_name: str) -> bool:
+    """Auto-create User + delegate to apps.deathwatch.services.remove_death_watch.
+
+    Returns True if watch existed and was deleted, False otherwise.
+    Idempotent — never raises.
+    """
+    user, _ = get_or_create_user_by_discord_id(discord_id, discord_username="")
+    return remove_death_watch(user, character_name)
+
+
+def list_deathwatches_for_discord_user(discord_id: int) -> list[DeathWatch]:
+    """Active deathwatches for user. Empty list when user unknown (no auto-create on read)."""
+    try:
+        user = User.objects.get(discord_id=discord_id)
+    except User.DoesNotExist:
+        return []
+    return list(list_death_watches(user).filter(active=True))
