@@ -38,6 +38,7 @@ class Character(models.Model):
     last_login = DateTimeField(null=True, blank=True, db_index=True)
     account_status = CharField(max_length=32, blank=True, default="")
     last_scraped_at = DateTimeField(auto_now=True)
+    last_deaths_scraped_at = DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-level"]
