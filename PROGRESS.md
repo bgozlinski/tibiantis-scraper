@@ -914,3 +914,94 @@ Wszystkie 4 zadania ukończone, milestone gotowy do zamknięcia. Design spec: [`
 - **TTL retention indexes na Mongo** (M6) — wciąż low priority.
 - **`User.email` model divergence** (M8 hotfix #134) — kandydat na custom User design w M-future.
 - **`Character.house`/`guild_membership` `null=True` vs spec `blank=True`** (M8 hotfix #140) — M-future cleanup PR.
+
+---
+
+## M12 — DeathWatch (per-character death blacklist) (DW-1 → DW-9)
+
+### Status: ✅ COMPLETED
+**Data start/koniec:** 2026-05-17 / 2026-05-17 (~1 dzień vs 5-6 dni z budżetu — wyprzedzenie 4-5 dni; cały M12 backend + 2 user-facing interfejsy + closure w jednej sesji, 8 PRs functional + close PR. Czwarty milestone z rzędu zrealizowany w <jeden dzień przez direct user-Claude pair).
+**Issues:** [#187](https://github.com/bgozlinski/tibiantis-scraper/issues/187) (DW-1), [#188](https://github.com/bgozlinski/tibiantis-scraper/issues/188) (DW-2), [#189](https://github.com/bgozlinski/tibiantis-scraper/issues/189) (DW-3), [#190](https://github.com/bgozlinski/tibiantis-scraper/issues/190) (DW-4), [#191](https://github.com/bgozlinski/tibiantis-scraper/issues/191) (DW-5), [#192](https://github.com/bgozlinski/tibiantis-scraper/issues/192) (DW-6), [#193](https://github.com/bgozlinski/tibiantis-scraper/issues/193) (DW-7), [#194](https://github.com/bgozlinski/tibiantis-scraper/issues/194) (DW-8), [#195](https://github.com/bgozlinski/tibiantis-scraper/issues/195) (DW-9 — ten PR) — wszystkie CLOSED.
+**PRs:** #196 (DW-1 models), #197 (DW-2 services), #198 (DW-3 spider), #199 (DW-4 pipeline), #200 (DW-5 task), #201 (DW-6 handler), #202 (DW-7 cog), #203 (DW-8 graphql), ten close PR.
+**Spec:** [`docs/superpowers/specs/2026-05-17-death-blacklist-design.md`](docs/superpowers/specs/2026-05-17-death-blacklist-design.md) (#186)
+**Plan:** [`docs/superpowers/plans/2026-05-17-death-blacklist-implementation-plan.md`](docs/superpowers/plans/2026-05-17-death-blacklist-implementation-plan.md) (#186)
+
+### DW-1 — Models + admin + `Character.last_deaths_scraped_at`
+- **#196 PR:** trzy modele w `apps/deathwatch/` (`DeathWatch`, `WatchedDeathEvent`, `DeathWatchChannel`) + dodanie `Character.last_deaths_scraped_at: DateTimeField(null=True, blank=True)` przez osobną migrację `apps/characters/0007_*` (model należy do characters; deathwatch tylko korzysta).
+- **Pułapka:** CI failed na `tests/unit/scrapers/test_character_spider.py::test_item_fields_match_model_fields` — nowy field na Character bez świadomej klasyfikacji scrape vs orchestration. Fix commit `d70b2c2` dorzucił `last_deaths_scraped_at` do exclude set (auto-managed orchestration metadata, NIE scrape data). **Memory `feedback_character_field_drift_guard.md`** — rule: każde nowe pole na Character wymaga decyzji (CharacterItem update **lub** drift guard exclude) na etapie planu, nie post-CI-fail.
+
+### DW-2 — Services + types + cap setting
+- **#197 PR:** 6 funkcji w `apps/deathwatch/services.py` (`add/remove/list/channel/record/notify`). Cap check w `transaction.atomic` (post-create count + rollback) — TOCTOU-safe przeciwko concurrent `/add`. Cap counts **unique characters across all users**, NIE watches (spec §3.2). `_canonicalize_name` w każdej service func — memory `feedback_canonicalization_downstream_audit` pilnuje. `notify_watched_deaths_for_character` stub return 0 (DW-6 wymienił).
+- 19 unit testów including cap race scenarios, canonicalize, reactivate inactive, hard delete idempotency, "po dodaniu" filter (3 cases: before/equal/after), unique constraint dedup.
+
+### DW-3 — Spider + fixture HTML + date utils refactor
+- **#198 PR:** `CharacterDeathsSpider` parsuje sekcję "Latest Deaths" na profilu (XPath ancestor match: `//table[.//b[normalize-space(text())="Latest Deaths"]]` — odporne na change order tabel). Wyciągnięcie `_parse_last_login` z `character_spider.py` do `scrapers/.../utils/dates.py::parse_tibiantis_timestamp` — wzmocnione defensywnie (try/except `ValueError` → None na garbage input). `CharacterDeathItem` osobny od istniejącego `DeathItem` (M4) — pipeline route po `isinstance`.
+- **Decyzja:** reuse `tests/fixtures/character_yhral.html` (M1 fixture) zamiast nowego — already zawiera "Latest Deaths" z 1 deathem. Multi-death scenariusze przez synthetic in-test `_build_character_with_deaths_html` helper (mirror `test_character_spider.py`). CLAUDE.md §15.6 — zero hit live Tibiantis w CI.
+
+### DW-4 — Pipeline route + record_watched_death integration
+- **#199 PR:** `DjangoPipeline` (async, M4) — nowy `elif isinstance(item, CharacterDeathItem)` branch wywołuje `record_watched_death` przez `sync_to_async`. Drop counter `custom/watched_death_dropped` (osobny od M4 `custom/death_duplicates`).
+- **Pułapka:** integration test fail na `IntegrityError: duplicate key value` w drugim teście. Plain `@pytest.mark.django_db` z async + `sync_to_async` = savepoint nie rollback'uje. Fix: `@pytest.mark.django_db(transaction=True)`. **Memory `feedback_async_db_test_transaction.md`** — rule: każdy async test z DB musi mieć `transaction=True`.
+
+### DW-5 — Celery task + Redis lock + freshness gate + seed migration
+- **#200 PR:** `scrape_for_watched_deaths` task — `acks_late=True`, Redis lock `cache.add(LOCK_KEY, "1", timeout=55)` (atomic, < 60s Beat interval). Cap defense-in-depth (`> cap`, strict `>` bo service cap akceptuje exactly cap). Freshness gate na `last_deaths_scraped_at` (NIE generic `last_scraped_at`) — bedmage scraper auto_now-pisałby `last_scraped_at` co maskowałoby deathwatch (spec §5.1). Subprocess `manage.py scrape_character_deaths`, timeout=30s, try/except `TimeoutExpired`.
+- **Seed migration** `0002_seed_periodic_task.py` ships `enabled=False` (vs bedmage check `enabled=True`): deathwatch hit's external Tibiantis co 1 min, admin musi świadomie włączyć po skonfigurowaniu `DeathWatchChannel`. Bez tego fresh deploy zaczynałby bombić od razu.
+- 12 integration testów — lock contention, freshness gate (z explicit test `test_freshness_gate_uses_last_deaths_scraped_at_not_last_scraped_at`), update `last_deaths_scraped_at` on success ONLY, no-update na failure, timeout handling, cap defense.
+
+### DW-6 — Notification handler + multi-channel notify integration
+- **#201 PR:** trzy klasy w `apps/notifications/handlers.py` mirror M8 stack (`DeathWatchAnnouncementHandler` Protocol + `DeathWatchChannelHandler` real Discord + `DeathWatchLoggingHandler` test/dev). Embed color **purple `0x8B008B`** vs M4 crimson `0xDC143C` — wizualne odróżnienie feedów w tym samym serwerze (spec §3.11). Factory `get_deathwatch_handler` (per-call resolution, swappable). **Real** `notify_watched_deaths_for_character` (zastąpił DW-2 stub) — multi-channel iteration z per-channel try/except + atomic flag-set-on-full-success (§3.13).
+- 6 integration testów including partial channel failure (flag stays False → next fire retries), per-channel exception isolation (jeden Discord 5xx NIE short-circuit innych), empty channels backlog.
+
+### DW-7 — Discord cog (4 slash commands)
+- **#202 PR:** `DeathWatchCog` z `SlashCommandGroup("deathwatch")`. 4 komendy: `add` (z idempotent ack na duplicate + ephemeral error na cap exceeded, NO stack trace per CLAUDE.md §8), `remove` (idempotent), `list` (empty state ze wskazówką), `channel` (admin-only). **Two-layer guard** DM → admin (mirror M7 `/deaths threshold`) — `ctx.author.guild_permissions` to `Member`-only, w DM → AttributeError. Wrappery w `discord_bot/services.py` (mirror bedmage pattern) — auto-create User + delegate.
+- 12 unit testów including admin guard, DM rejection, ephemeral flag pinning, cap error message format.
+
+### DW-8 — GraphQL schema
+- **#203 PR:** 3 typy (`DeathWatchType`, `WatchedDeathEventType`, `DeathWatchChannelType`) + 2 queries (`myDeathWatches` filter by request user, `watchedDeaths` z limit clamp 1-100) + 3 mutations (`addDeathWatch`, `removeDeathWatch`, `setDeathWatchChannel` superuser-only). Scal w `config/schema.py` przez `merge_types`. JWT auth via `info.context.request.user.is_authenticated` (M2 pattern).
+- **Pułapka:** test `test_set_death_watch_channel_handles_64bit_discord_snowflakes` mojego pierwszego mock `channel_id=9876543210987654321` (9.87e18) przekroczył Postgres `bigint` max (2^63-1 = 9.22e18) → `DataError`. Fix: oba mock snowflakes < 2^63 (`1234567890123456789` + `1098765432109876543`). Real Discord snowflakes mieszczą się w 2^63 z rezerwą do ~2070r. Discord guild/channel IDs jako **String** w GraphQL (Int 32-bit overflow), resolver parses do int.
+- 16 testów including auth gates, query filters, limit clamp, mutation happy/error paths, superuser-only guard, snowflake bigint range.
+
+### DW-9 — Closure (this PR)
+- **stubs.py update NOT needed** — chore PR #92 (M5 era) wprowadził `from config.settings.base import *` w `stubs.py`, więc wszystkie `DEATHWATCH_*` settings są **automatycznie widoczne dla mypy**. Plan Task #9 był nieaktualny vs aktualny stubs.py — assumed explicit annotations z M3-M4 era. **Lesson generalizable** — przed pisaniem planu sprawdzaj aktualny stan infrastructure files; planowane updates mogą być no-op.
+- PROGRESS.md retro section (this).
+
+### Definition of Done M12 (ze spec'a §8) — ✅ wszystkie domknięte
+- [x] **8 functional PRs merged + CI green** — #196-#203. Lint + test zielone na każdym PR. Coverage `apps/deathwatch/` ≥85% (target spec §6.5).
+- [x] **Backend komplet** — modele + migracje + services + spider + pipeline + Celery task + handler. PeriodicTask seeded `enabled=False`.
+- [x] **User-facing interfaces** — Discord cog (4 slash commands w bot.py registered) + GraphQL (queries+mutations scalone w `/graphql/`).
+- [x] **stubs.py auto-coverage** — single source of truth z base.py (M5 chore #92), zero manual sync.
+- [x] **Retro + PROGRESS close PR merged** — this PR.
+- [ ] **Manual smoke w prod-like env** — pozostaje po Twojej stronie po merge: `/deathwatch channel` → `/deathwatch add Yhral` → admin enables PeriodicTask → poczekać 1 min → verify purple embed na kanale.
+
+### Podsumowanie M12 (2026-05-17, ~1 dzień vs 5-6 dni z budżetu — wyprzedzenie 4-5 dni)
+- **8 functional PRs + close PR w jednej sesji.** Strict chain DW-1 → DW-2 → DW-3 → DW-4 → DW-5 → DW-6 → DW-7 → DW-8 → DW-9 zachowany. Trzy stray edits w `apps/deathwatch/models.py` przez otwarty plik w IDE (typo `wfrom`/`        from`) — wszystkie wykryte przez `git status`/`git diff` pre-PR, restored przez `git restore`.
+- **DoD M12 spełnione** — wszystkie 9 DW issues closed, 8 PRs functional + close PR, backend + UX interfaces komplet.
+- **Najwartościowsze lekcje M12:**
+  1. **Reuse istniejących fixtures** (DW-3). `tests/fixtures/character_yhral.html` z M1 już zawierał sekcję "Latest Deaths" — zero potrzeby tworzenia nowego pliku ani hitowania live Tibiantis. Multi-death scenariusze przez **synthetic in-test fixture** (`_build_character_with_deaths_html` mirror `test_character_spider.py`). **Generalizable: przed dodaniem nowego fixture, grep'uj istniejące za sekcje które już są w markup'ie — Tibiantis fixturki M1 mają więcej niż profil postaci.**
+  2. **Defensive parsing utilities** (DW-3). `parse_tibiantis_timestamp` wzmocniony z try/except `ValueError` → None na garbage input. Tibiantis to fan-made site — niespodziewana zmiana layoutu nie powinna crashować spidera. Original M1 `_parse_last_login` rzucał ValueError na każde "WHATEVER" → spider crash. **Single source of truth utility** = single place do hardening; bedmage spider dostał refactor benefit za darmo.
+  3. **Async DB tests need `transaction=True`** (DW-4). Plain `@pytest.mark.django_db` z `sync_to_async` = savepoint nie rollback'uje w async context. Drugi test w pliku rzuca `IntegrityError: duplicate key`. **Memory `feedback_async_db_test_transaction.md`** — pattern w projekcie istniał (M2/M5 async tests), ale plan DW-4 zapomniał. Lesson: **integration test patterns checklist** — kolejny milestone dodaje "async + DB?" pytanie.
+  4. **Per-source freshness/state fields** (DW-5). `Character.last_deaths_scraped_at` osobny od `last_scraped_at` (auto_now bedmage trigger). Reuse byłby silent bug — bedmage scraper "masked" deathwatch's freshness gate. Spec §5.1 explicit; test `test_freshness_gate_uses_last_deaths_scraped_at_not_last_scraped_at` pilnuje regresji. **Generalizable: gdy task X i task Y dotykają tego samego model'u, każdy ma osobne `last_X_at` / `last_Y_at` — never share.**
+  5. **`enabled=False` w seed migration dla external-side-effect tasks** (DW-5). Bedmage check (`enabled=True`) jest DB-only no-op na pustej bazie. Deathwatch task hit's tibiantis.online co 1 min — admin musi świadomie włączyć. Fresh deploy nie powinien bombić zewnętrznych serwisów natychmiast. **Generalizable trigger:** task hituje zewnętrzny URL? → `enabled=False` w seed, czeka na operator.
+  6. **Multi-channel atomic flag-set vs partial-success** (DW-6). Flag set TYLKO po `all_channels_ok`. Partial failure = retry na wszystkich next fire (duplicate posts na healthy channels) **w zamian za at-least-once delivery na unhealthy**. Per-channel exception isolation (test `test_notify_isolates_per_channel_exceptions`) — jeden Discord 5xx NIE short-circuit pozostałych. Trade-off accepted dla MVP; §9.5 follow-up planuje per-channel announcement tracking.
+  7. **Discord snowflake bigint pitfall w GraphQL** (DW-8). GraphQL `Int` 32-bit (max 2.15e9), Postgres `bigint` 64-bit (max 9.22e18). Real Discord snowflakes ~1.2e18 → schema accepts String (resolver parses int), Postgres handles natural bigint. **Test bigint range pitfall:** mock channel_id `9876543210987654321` (9.87e18) przekroczył Postgres max — fix: oba mocks < 2^63. Real snowflakes mieszczą się do ~2070r.
+  8. **stubs.py auto-imports z base.py** (DW-9). Chore PR #92 (M5+) wprowadził `from base import *` — zero manual sync wymagane od tego momentu. Plan DW-9 założył explicit annotations z M3-M4 era. **Generalizable: pre-flight infrastructure check przed writing planu** — sprawdzaj aktualny stan plików (stubs.py, conftest.py, fixtures dir) bo plan może mieć założenia sprzed M-cykli.
+  9. **Stray edits z otwartego pliku w IDE** (DW-4, DW-9). Trzykrotnie `apps/deathwatch/models.py` miał typo (`wfrom`/`        from` zamiast `from`) — przypadkowe keystroke gdy plik był otwarty + IDE focus. `git status` przed PR wychwytuje, `git restore` cleanup. **Generalizable: long sessions z otwartymi plikami w IDE = drobne sporadyczne edits.** Workaround: zamykać niepotrzebne pliki, lub `git diff` przed każdym `git push`.
+  10. **Plan vs aktualny kod — `dict` mypy strict** (DW-2). Plan miał `record_watched_death(item: dict)`; mypy strict mode wymaga `dict[str, Any]`. Fix inline w pre-commit. **Generalizable: plan może być sprzed mypy-strict era; każdy `dict`/`list` w signaturze planu wymaga `dict[K, V]`/`list[T]` form.**
+
+### Tech debt z M12 (do adresowania post-M12 / M-future)
+
+**Spec §1 Out of scope (świadomie odroczone, mogą wrócić):**
+- **Konsolidacja scrape gdy postać na obu listach (bedmage + deathwatch)** — dziś dwa osobne requesty do tej samej strony w różnych cadence (1 min vs 1 h). Trigger refactora: >5 postaci na obu listach w prod. Solution: rozszerzyć `character_spider` o yield `CharacterDeathItem[]` przy okazji, deathwatch consumes its slice. Spec §1, plan §9.4.
+- **`DeathWatch.guild_id` field** (spec §9.3) — multi-guild routing. Gdy bot trafi na drugi serwer Discord, user z Guild A zobaczy ogłoszenia z Guild B watchów. Single-guild deployment = no-op. Solution: dodać field + filter w `notify_watched_deaths_for_character`.
+- **Per-channel announcement tracking** (spec §9.5) — gdy permanentny 403/404 na jednym kanale utyka event (`announced_on_discord` stays False forever). Trigger: pierwszy incydent w prod. Solution: nowy model `DeathWatchAnnouncement(event, channel, status)` z per-channel flag.
+- **Per-user `/deathwatch threshold <level>`** — celowo wyłączone (semantyka "watch konkretnej postaci" tego nie potrzebuje). Wracamy jeśli user request.
+- **Auto-deactivation watcha po N failed scrape** (postać usunięta z Tibiantis) — heurystyka kruche, manual `/remove` na razie.
+- **Web dashboard z listą watched + historią ogłoszeń** — nie MVP, M-future cały frontend story.
+- **Soft delete + audit retention** — obecnie hard delete (konsystencja z bedmages). Jeśli audit log będzie potrzebny: zmiana modelu + retention policy.
+
+**M12-internal carry-over (nieujęte w spec ale wykryte w trakcie):**
+- **Plan Task #9 nieaktualny vs stubs.py** — założył explicit annotations z M3-M4 era; aktualny stubs.py (chore #92) auto-imports z base.py. **Update pattern:** writing-plans skill mógłby mieć "pre-flight infrastructure check" sekcję dla planów wymagających updates plików meta (stubs.py, conftest.py, pyproject.toml).
+- **`apps/accounts/models.py:11` mypy error** (`Incompatible types in assignment` na `User.email`) — pre-existing, niezwiązany z M12. Pre-commit nie łapie bo dotyka tylko changed files. Następny chore PR refactorujący accounts model dostanie te ostrzeżenie do wyczyszczenia.
+
+**M-future (osobne milestones, znacząca scope):**
+- **DeathWatch smoke runbook** — `docs/dev-runbook.md` sekcja "How to smoke-test DeathWatch post-deploy" z step-by-step `/deathwatch channel` → `/deathwatch add Yhral` → expected purple embed shape. Manual only (CLAUDE.md §15.6 — zero live Tibiantis w CI).
+- **Coverage threshold per-module** — `apps/deathwatch/` ma 85%+ ale globalny CI threshold to 70%. Future: per-module thresholds w `pyproject.toml`.
