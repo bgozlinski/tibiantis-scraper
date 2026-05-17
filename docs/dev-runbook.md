@@ -193,6 +193,223 @@ Use this for dev `.env` AND for production `.env` on the Hetzner VM. Same genera
 
 The same constraint applies to `POSTGRES_PASSWORD`: alphanumeric avoids compose `$VAR` interpolation. Post-#163 the password lives in exactly one env var (no `DATABASE_URL` URL-encoding to also worry about), but the alphanumeric rule remains useful as a defence against compose interpolation.
 
+## §7 DeathWatch smoke test (M12)
+
+Manual post-deploy smoke for the per-character death blacklist feature.
+Verifies the full pipeline: Discord slash command → DB watch row → Celery
+task fires → spider scrapes Tibiantis → pipeline filters/persists →
+notification handler posts purple embed to configured channel.
+
+CLAUDE.md §15.6 — żaden automated test nie hituje live Tibiantis. Smoke
+**MUSI** być manual (po deploy, przed claiming feature działa w prod).
+
+### 7.1 Wybór trybu
+
+Dwa konteksty — wybierz przed startem:
+
+**A. Local dev (docker-compose.dev.yml)** — szybkie, bezpieczne, ale wymaga
+że dev bot ma rzeczywisty Discord token i jest dołączony do testowego serwera
+(`DISCORD_DEV_GUILD_ID` w `.env`). Wybierz dla pierwszego testu po nowych
+zmianach modeli/spider/services.
+
+**B. Prod (Hetzner)** — testuje real deploy + real DB + real Discord bot.
+Wymaga SSH tunnel do Django admin (port 8000) — patrz `deploy-runbook.md`
+§9 lub memory `reference_hetzner_vm`. Wybierz dla post-merge confirmation.
+
+Kroki poniżej są identyczne dla obu trybów — różni się tylko **gdzie
+uruchamiasz komendy** (local shell vs SSH na VM).
+
+### 7.2 Pre-flight (musi być przed dotknięciem Discord)
+
+**Lokalne dev:**
+```bash
+# Stack up
+docker compose -f docker-compose.dev.yml up -d postgres redis mongo
+
+# Migrate (powinno być no-op jeśli świeży master, ale defensywnie)
+poetry run python manage.py migrate
+
+# Sprawdź że seed PeriodicTask jest w DB (z DW-5 seed migration)
+poetry run python manage.py shell -c "from django_celery_beat.models import PeriodicTask; pt = PeriodicTask.objects.get(name='deathwatch.scrape_for_watched_deaths'); print(f'enabled={pt.enabled} every={pt.interval.every} period={pt.interval.period}')"
+```
+Expected: `enabled=False every=1 period=minutes`. Jeśli `enabled=True` — ktoś
+już włączył ten task wcześniej, **przejdź do kroku 7.5 z istniejącym stanem**
+(nie restartuj Celery).
+
+**Prod (Hetzner):**
+```bash
+ssh deploy@178.105.122.18
+cd /opt/tibiantis
+docker compose ps  # potwierdź wszystkie serwisy "healthy"
+docker compose exec web python manage.py shell -c "from django_celery_beat.models import PeriodicTask; pt = PeriodicTask.objects.get(name='deathwatch.scrape_for_watched_deaths'); print(f'enabled={pt.enabled} every={pt.interval.every} period={pt.interval.period}')"
+```
+
+**Uruchom workery (tylko local dev):**
+```bash
+# Terminal 1 — Celery worker (Windows: -P solo per §2)
+poetry run celery -A config worker -l info -P solo
+
+# Terminal 2 — Celery beat
+poetry run celery -A config beat -l info
+
+# Terminal 3 — Discord bot
+poetry run python manage.py run_discord_bot
+```
+
+W bot logach **MUSISZ** zobaczyć `Synced commands to dev guild <ID>` przed
+przejściem dalej — bez tego `/deathwatch` nie pojawi się w Discord UI.
+
+### 7.3 Step 1 — Skonfiguruj kanał Discord (admin-only)
+
+Na testowym serwerze Discord, **w kanale gdzie mają iść ogłoszenia**:
+
+1. Wpisz `/deathwatch channel`.
+2. Expected: public ack `💀👀 DeathWatch announcements will be posted to this channel.`
+3. Verify w DB (osobne terminal):
+   ```bash
+   # Local
+   poetry run python manage.py shell -c "from apps.deathwatch.models import DeathWatchChannel; [print(f'guild={c.guild_id} channel={c.channel_id}') for c in DeathWatchChannel.objects.all()]"
+   # Prod
+   docker compose exec web python manage.py shell -c "..."
+   ```
+   Expected: jeden wpis z `guild_id` + `channel_id` matchującymi Discord.
+
+**Negative test (skip w prod):** wpisz `/deathwatch channel` jako **non-admin
+user**. Expected: ephemeral `❌ Only server admins can set the deathwatch channel.`
+
+### 7.4 Step 2 — Dodaj watcha (per-user)
+
+W dowolnym kanale lub DM (bot ma slash commands globalnie):
+
+1. Wybierz **postać która rzeczywiście umiera** w grze. Najlepsze targety:
+   - high-level character na PvP-enabled świecie (`Yhral`, `Bubble`, znana
+     postać twojej gildii),
+   - albo świadomie zaakceptuj że może nie być deathów przez parę godzin.
+2. `/deathwatch add Yhral` (zamień `Yhral` na real character).
+3. Expected: ephemeral `👀 Now watching \`Yhral\` for new deaths.`
+4. `/deathwatch list` — verify postać widoczna na liście.
+5. Verify w DB:
+   ```bash
+   poetry run python manage.py shell -c "from apps.deathwatch.models import DeathWatch; [print(f'{w.user.username} → {w.character.name} (active={w.active}, created_at={w.created_at})') for w in DeathWatch.objects.all()]"
+   ```
+   Expected: row z `active=True`, `created_at` = teraz.
+
+**Pułapka §3.6 ("po dodaniu"):** historyczne śmierci z tabeli profilu (sprzed
+`created_at`) zostaną **zignorowane**. Tabela Latest Deaths na tibiantis.online
+pokazuje ostatnie ~10 deaths — spider wszystkie sczyta, service'y odrzucą
+te sprzed dodania watcha. Jeśli postać ostatnio umarła wczoraj, nic się nie
+pojawi dopóki nie umrze **ponownie**.
+
+### 7.5 Step 3 — Włącz PeriodicTask (admin Django)
+
+**Local dev (przez admin UI):**
+1. Otwórz `http://localhost:8000/admin/django_celery_beat/periodictask/`.
+2. Kliknij `deathwatch.scrape_for_watched_deaths`.
+3. Check `Enabled` checkbox → Save.
+
+**Prod (SSH tunnel + admin UI):**
+1. Setup tunnel — patrz tunnel z naszej wcześniejszej sesji:
+   ```bash
+   ssh -N -L 3001:localhost:3001 -L 5432:localhost:5432 deploy@178.105.122.18
+   ```
+   (jeśli web ma localhost-only binding na VM, dologuj `-L 8000:localhost:8000`).
+2. `http://localhost:8000/admin/django_celery_beat/periodictask/` → enable.
+
+**Alternatywnie z shell (bez UI):**
+```bash
+poetry run python manage.py shell -c "from django_celery_beat.models import PeriodicTask; pt = PeriodicTask.objects.get(name='deathwatch.scrape_for_watched_deaths'); pt.enabled = True; pt.save(); print(f'enabled={pt.enabled}')"
+```
+Expected: `enabled=True`.
+
+### 7.6 Step 4 — Verify task fires (1-2 min waiting)
+
+Beat scheduler pollsuje co `BEAT_MAX_LOOP_INTERVAL` (default 5 sec) i odpala
+task na początku każdej pełnej minuty. Pierwszy fire możesz zobaczyć w **0-60s**.
+
+**Watch Celery worker logs** (gdzie task wykonuje się):
+```
+[INFO/ForkPoolWorker-1] Task apps.deathwatch.tasks.scrape_for_watched_deaths[<uuid>] received
+[INFO/ForkPoolWorker-1] scrape_for_watched_deaths: {'checked': 1, 'skipped': 0, 'scraped': 1, 'failed': 0, 'events_announced': 0, 'locked': False}
+[INFO/ForkPoolWorker-1] Task apps.deathwatch.tasks.scrape_for_watched_deaths[<uuid>] succeeded
+```
+
+`events_announced=0` jest **OK** dla pierwszego fire'u — żaden nowy death
+jeszcze nie wpadł (filtr "po dodaniu").
+
+**Verify `last_deaths_scraped_at` updateowane** (proves task ran + subprocess
+worked):
+```bash
+poetry run python manage.py shell -c "from apps.characters.models import Character; c = Character.objects.get(name='Yhral'); print(f'last_deaths_scraped_at={c.last_deaths_scraped_at}')"
+```
+Expected: timestamp z ostatnich ~1 min.
+
+**Jeśli `last_deaths_scraped_at` is None po 2 min:**
+- Sprawdź worker logs za `subprocess` errors (timeout, returncode != 0).
+- Sprawdź Mongo `scrape_logs` collection za HTTP errors:
+  ```bash
+  poetry run python manage.py shell -c "from logs_backend.client import get_collection; [print(d) for d in get_collection('scrape_logs').find().sort('started_at', -1).limit(3)]"
+  ```
+- Lock contention? Sprawdź Redis: `docker compose exec redis redis-cli get deathwatch_scrape_lock` — powinno być `(nil)` między fires.
+
+### 7.7 Step 5 — Wait for actual death (variable czas)
+
+Postać musi rzeczywiście umrzeć w grze, **po `watch.created_at`**. Może to
+być sekundy (jeśli to PvP-active char) albo godziny (jeśli low-traffic).
+
+**Gdy death wpadnie, expected:**
+1. Worker logs: `events_announced=1` w następnym task summary.
+2. Discord channel (skonfigurowany w 7.3): purple embed:
+   - Title: **Character name** (klikalne, link do tibiantis.online profile).
+   - Description:
+     ```
+     Died at level <N>
+     <YYYY-MM-DD HH:MM:SS>
+     Killed by: <killer>
+     ```
+   - Color: dark purple (`#8B008B`).
+3. Verify w DB `WatchedDeathEvent`:
+   ```bash
+   poetry run python manage.py shell -c "from apps.deathwatch.models import WatchedDeathEvent; [print(f'{e.character.name} lvl {e.level_at_death} @ {e.died_at} announced={e.announced_on_discord}') for e in WatchedDeathEvent.objects.all()]"
+   ```
+   Expected: row z `announced_on_discord=True`.
+
+**Visual sanity:** embed kolor MUSI być **fioletowy** (`#8B008B`), nie
+crimson (`#DC143C`) — crimson to M4 deaths feature, fiolet to DW-6 (spec §3.11).
+Jeśli widzisz crimson — handler routing jest broken, sprawdź
+`settings.DEATHWATCH_NOTIFICATION_HANDLER`.
+
+### 7.8 Step 6 — Cleanup
+
+**Wyłącz PeriodicTask** (żeby nie bombić Tibiantis bez powodu):
+```bash
+poetry run python manage.py shell -c "from django_celery_beat.models import PeriodicTask; pt = PeriodicTask.objects.get(name='deathwatch.scrape_for_watched_deaths'); pt.enabled = False; pt.save()"
+```
+
+**Usuń test watcha:** Discord → `/deathwatch remove Yhral`.
+Expected: ephemeral `🗑️ Stopped watching \`Yhral\`.`
+
+**(Opcjonalnie) Usuń test channel config:**
+```bash
+poetry run python manage.py shell -c "from apps.deathwatch.models import DeathWatchChannel; DeathWatchChannel.objects.all().delete()"
+```
+
+**(Opcjonalnie) Usuń test events:**
+```bash
+poetry run python manage.py shell -c "from apps.deathwatch.models import WatchedDeathEvent; WatchedDeathEvent.objects.all().delete()"
+```
+
+### 7.9 Common failure modes
+
+| Symptom | Diagnose | Fix |
+|---|---|---|
+| `/deathwatch` nie pojawia się w Discord | Bot logs nie pokazują "Synced commands" | Restart bot. Verify `DISCORD_DEV_GUILD_ID` w `.env`. |
+| `/deathwatch add` → "Something went wrong" | Cog rzucił unhandled exception | `docker compose logs discord_bot` — szukaj traceback. Najczęściej canonicalize edge case lub User auto-create race. |
+| Task fires ale `scraped=0` | Spider crashes wewnątrz subprocess | Sprawdź `manage.py scrape_character_deaths <name>` ręcznie — output pokaże traceback. |
+| Task fires `scraped=1`, brak embed | Channel nie skonfigurowany / handler error / "po dodaniu" filtr drop | Verify `DeathWatchChannel` ma row. Sprawdź worker logs za handler exceptions. Sprawdź `WatchedDeathEvent` count vs `announced_on_discord=True` count. |
+| Embed pojawia się ale crimson zamiast fiolet | Handler routing M4 zamiast DW-6 | Verify `settings.DEATHWATCH_NOTIFICATION_HANDLER=apps.notifications.handlers.DeathWatchChannelHandler`. |
+| Task `locked=True` przez kilka fires z rzędu | Poprzedni fire crashed bez release locka | `docker compose exec redis redis-cli del deathwatch_scrape_lock`. |
+| `bigint out of range` przy `setDeathWatchChannel` GraphQL mutation | Test snowflake > 2^63-1 | Użyj real Discord snowflake (zawsze < 2^63 do ~2070r). |
+
 ---
 
 **Retro sources:**
@@ -200,6 +417,7 @@ The same constraint applies to `POSTGRES_PASSWORD`: alphanumeric avoids compose 
 - [M3-D17] Celery on Windows — `-P solo` (see `PROGRESS.md` retro M3)
 - [M7-D33] `pre-commit clean` workflow (see `PROGRESS.md` retro M7)
 - [M9-D43] MSYS path conversion + compose build race + `$VAR` interpolation (see `PROGRESS.md` retro M9)
+- [M12 DW-1..9] DeathWatch smoke flow (see `PROGRESS.md` retro M12 — 10 lessons learned)
 
 **Related docs:**
 
