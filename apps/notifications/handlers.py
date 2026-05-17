@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 if TYPE_CHECKING:
     from apps.bedmages.models import BedmageWatch
     from apps.deaths.models import DeathEvent
+    from apps.deathwatch.models import DeathWatchChannel, WatchedDeathEvent
     from discord_bot.models import DiscordChannel
 
 logger = logging.getLogger(__name__)
@@ -166,5 +167,77 @@ class DeathLoggingHandler:
             death_event.level_at_death,
             discord_channel.guild_id,
             discord_channel.channel_id,
+        )
+        return True
+
+
+# ─── DeathWatch (DW-6) — per-character death blacklist announcements ────────
+#
+# Mirrors the DeathEvent stack above (Protocol + REST + Logging impls). Key
+# differences:
+# - Operates on `WatchedDeathEvent` (FK to Character) instead of `DeathEvent`
+#   (denormalized character_name string).
+# - Channel model is `DeathWatchChannel` (no per-guild threshold field).
+# - Embed color: 0x8B008B (purple) — visually distinct from M4 crimson when
+#   both feeds post to the same Discord server.
+
+
+class DeathWatchAnnouncementHandler(Protocol):
+    """Protocol for deathwatch announcements.
+
+    Implementations swap via settings.DEATHWATCH_NOTIFICATION_HANDLER.
+    """
+
+    def announce(
+        self, event: WatchedDeathEvent, channel: DeathWatchChannel
+    ) -> bool: ...
+
+
+class DeathWatchChannelHandler:
+    """Implements DeathWatchAnnouncementHandler. Posts purple embed to per-guild channel."""
+
+    def announce(self, event: WatchedDeathEvent, channel: DeathWatchChannel) -> bool:
+        from apps.notifications.discord_client import DiscordRESTClient
+
+        client = DiscordRESTClient()
+        embed = self._render_embed(event)
+        return client.send_channel_message(
+            channel_id=channel.channel_id,
+            embed=embed,
+        )
+
+    def _render_embed(self, event: WatchedDeathEvent) -> dict[str, Any]:
+        """Build Discord embed mirroring M4 DiscordChannelHandler shape.
+
+        Color differs (purple vs crimson) so operators distinguish DW from M4
+        deaths in the same channel. `died_at` converted UTC → Europe/Warsaw
+        before formatting (matches #180 convention).
+        """
+        died_at_local = event.died_at.astimezone(ZoneInfo("Europe/Warsaw"))
+        return {
+            "title": event.character.name,
+            "url": (
+                "https://www.tibiantis.online/?page=character&name="
+                + urllib.parse.quote_plus(event.character.name)
+            ),
+            "description": (
+                f"Died at level {event.level_at_death}\n"
+                f"{died_at_local:%Y-%m-%d %H:%M:%S}\n"
+                f"Killed by: {event.killed_by or 'unknown'}"
+            ),
+            "color": 0x8B008B,  # purple — distinct from M4 crimson
+        }
+
+
+class DeathWatchLoggingHandler:
+    """Test/dev variant — logs only, returns True (success). No Discord call."""
+
+    def announce(self, event: WatchedDeathEvent, channel: DeathWatchChannel) -> bool:
+        logger.info(
+            "DEATHWATCH ANNOUNCE: %s (lvl %s) → guild=%s channel=%s",
+            event.character.name,
+            event.level_at_death,
+            channel.guild_id,
+            channel.channel_id,
         )
         return True

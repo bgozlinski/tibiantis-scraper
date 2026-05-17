@@ -6,6 +6,7 @@ from django.utils.module_loading import import_string
 from apps.notifications.handlers import (
     BedmageNotificationHandler,
     DeathAnnouncementHandler,
+    DeathWatchAnnouncementHandler,
 )
 
 
@@ -23,3 +24,13 @@ def get_bedmage_handler() -> BedmageNotificationHandler:
 def get_death_handler() -> DeathAnnouncementHandler:  # NEW M8
     handler_class = import_string(settings.DEATH_NOTIFICATION_HANDLER)
     return cast(DeathAnnouncementHandler, handler_class())
+
+
+def get_deathwatch_handler() -> DeathWatchAnnouncementHandler:  # DW-6
+    """Resolve DeathWatchAnnouncementHandler from settings.DEATHWATCH_NOTIFICATION_HANDLER.
+
+    Same per-call resolution pattern as get_bedmage_handler / get_death_handler —
+    @override_settings in tests must work; cost is negligible at 1-min cadence.
+    """
+    handler_class = import_string(settings.DEATHWATCH_NOTIFICATION_HANDLER)
+    return cast(DeathWatchAnnouncementHandler, handler_class())
