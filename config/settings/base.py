@@ -196,6 +196,14 @@ BEDMAGE_NOTIFICATION_HANDLER = env(
     default="apps.notifications.handlers.DiscordDMHandler",  # M5 LoggingHandler → M8 DiscordDMHandler
 )
 
+# DeathWatch (per-character death blacklist, M12).
+# Global cap on UNIQUE characters watched (not per-user). With DOWNLOAD_DELAY=2s
+# in scrapers/settings.py, 20 chars × 2s = 40s cycle fits the 1-min Beat interval
+# with 50% margin. See spec §3.2 and plan DW-5 Redis lock for overflow handling.
+DEATHWATCH_MAX_WATCHED_CHARACTERS = env.int(
+    "DEATHWATCH_MAX_WATCHED_CHARACTERS", default=20
+)
+
 # MongoDB — used ONLY for app_logs / scrape_logs (CLAUDE.md §4).
 # Empty MONGO_URL disables Mongo logging gracefully via NullHandler (spec §3.4).
 MONGO_URL = env("MONGO_URL", default="")
