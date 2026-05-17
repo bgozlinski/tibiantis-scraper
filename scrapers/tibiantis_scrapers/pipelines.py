@@ -1,5 +1,9 @@
 from asgiref.sync import sync_to_async
-from scrapers.tibiantis_scrapers.items import CharacterItem, DeathItem
+from scrapers.tibiantis_scrapers.items import (
+    CharacterDeathItem,
+    CharacterItem,
+    DeathItem,
+)
 
 
 class DjangoPipeline:
@@ -15,5 +19,18 @@ class DjangoPipeline:
             result = await sync_to_async(save_death_event)(dict(item))
             if result is None:
                 spider.crawler.stats.inc_value("custom/death_duplicates")
+
+        elif isinstance(item, CharacterDeathItem):
+            # DW-4: route to deathwatch services. record_watched_death applies
+            # the §3.6 "po dodaniu" filter — returns None for items that
+            # don't qualify (no active watch, died before watch.created_at,
+            # missing Character, or unique-constraint dedup). Spider already
+            # emits ALL deaths from the Latest Deaths table; service decides
+            # which to persist.
+            from apps.deathwatch.services import record_watched_death
+
+            result = await sync_to_async(record_watched_death)(dict(item))
+            if result is None:
+                spider.crawler.stats.inc_value("custom/watched_death_dropped")
 
         return item

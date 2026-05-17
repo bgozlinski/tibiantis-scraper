@@ -8,7 +8,12 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from scrapers.tibiantis_scrapers.items import CharacterItem, DeathItem
+
+from scrapers.tibiantis_scrapers.items import (
+    CharacterDeathItem,
+    CharacterItem,
+    DeathItem,
+)
 from scrapers.tibiantis_scrapers.pipelines import DjangoPipeline
 
 
@@ -21,6 +26,13 @@ def _make_item(**kwargs: object) -> CharacterItem:
 
 def _make_death_item(**kwargs: object) -> DeathItem:
     item = DeathItem()
+    for key, value in kwargs.items():
+        item[key] = value
+    return item
+
+
+def _make_watched_death_item(**kwargs: object) -> CharacterDeathItem:
+    item = CharacterDeathItem()
     for key, value in kwargs.items():
         item[key] = value
     return item
@@ -184,5 +196,84 @@ class TestDjangoPipelineProcessItem:
         fake_event = MagicMock(pk=1)
         with patch("apps.deaths.services.save_death_event", return_value=fake_event):
             await pipeline.process_item(full_death_item, spider)
+
+        spider.crawler.stats.inc_value.assert_not_called()
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # CharacterDeathItem (DW-4) — same dispatch+stats pattern as DeathItem
+    # ──────────────────────────────────────────────────────────────────────────
+
+    @pytest.fixture()
+    def full_watched_death_item(self) -> CharacterDeathItem:
+        return _make_watched_death_item(
+            character_name="Yhral",
+            level_at_death=128,
+            killed_by="a giant crayfish",
+            died_at=datetime(2026, 5, 7, 14, 15, 46, tzinfo=ZoneInfo("Europe/Berlin")),
+        )
+
+    @pytest.mark.asyncio
+    async def test_watched_death_item_dispatched_to_record_watched_death(
+        self,
+        pipeline: DjangoPipeline,
+        spider: MagicMock,
+        full_watched_death_item: CharacterDeathItem,
+    ) -> None:
+        with patch("apps.deathwatch.services.record_watched_death") as mock_record:
+            await pipeline.process_item(full_watched_death_item, spider)
+
+        mock_record.assert_called_once_with(dict(full_watched_death_item))
+
+    @pytest.mark.asyncio
+    async def test_watched_death_does_not_route_through_other_paths(
+        self,
+        pipeline: DjangoPipeline,
+        spider: MagicMock,
+        full_watched_death_item: CharacterDeathItem,
+    ) -> None:
+        """Regression: CharacterDeathItem must NOT trigger upsert_character or
+        save_death_event. Spec §3.4 — full separation from M4 deaths feature.
+        """
+        with (
+            patch("apps.deathwatch.services.record_watched_death"),
+            patch("apps.characters.services.upsert_character") as mock_upsert,
+            patch("apps.deaths.services.save_death_event") as mock_save_death,
+        ):
+            await pipeline.process_item(full_watched_death_item, spider)
+
+        mock_upsert.assert_not_called()
+        mock_save_death.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_watched_death_increments_dropped_counter_on_none(
+        self,
+        pipeline: DjangoPipeline,
+        spider: MagicMock,
+        full_watched_death_item: CharacterDeathItem,
+    ) -> None:
+        """When record_watched_death returns None (filter "po dodaniu" dropped,
+        no qualifying watch, missing Character, or dedup), pipeline must tick
+        ``custom/watched_death_dropped``. Same observability pattern as
+        ``custom/death_duplicates`` from M4.
+        """
+        with patch("apps.deathwatch.services.record_watched_death", return_value=None):
+            await pipeline.process_item(full_watched_death_item, spider)
+
+        spider.crawler.stats.inc_value.assert_called_once_with(
+            "custom/watched_death_dropped"
+        )
+
+    @pytest.mark.asyncio
+    async def test_watched_death_does_not_increment_counter_on_success(
+        self,
+        pipeline: DjangoPipeline,
+        spider: MagicMock,
+        full_watched_death_item: CharacterDeathItem,
+    ) -> None:
+        fake_event = MagicMock(pk=1)
+        with patch(
+            "apps.deathwatch.services.record_watched_death", return_value=fake_event
+        ):
+            await pipeline.process_item(full_watched_death_item, spider)
 
         spider.crawler.stats.inc_value.assert_not_called()
