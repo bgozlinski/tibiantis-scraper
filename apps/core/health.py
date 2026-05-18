@@ -1,3 +1,5 @@
+"""HTTP health endpoint used by Docker ``HEALTHCHECK`` and the load balancer."""
+
 from __future__ import annotations
 
 import logging
@@ -14,18 +16,18 @@ logger = logging.getLogger(__name__)
 
 @require_GET
 def health_check(request: HttpRequest) -> JsonResponse:
-    """Liveness + readiness check dla Docker HEALTHCHECK i load balancer'a.
+    """Liveness + readiness probe for the web container.
 
-    Sprawdza:
-    - DB connectivity (cursor.execute("SELECT 1"))
-    - Redis connectivity (redis.Redis(...).ping())
+    Checks:
 
-    Returns:
-        200 + {"db": "ok", "redis": "ok"} gdy oba OK.
-        503 + {"db": "fail"|"ok", "redis": "fail"|"ok", "error": "..."} gdy fail.
+    * **DB connectivity** — runs ``SELECT 1`` through the default cursor.
+    * **Redis connectivity** — issues a ``PING`` against ``settings.REDIS_URL``.
 
-    Out of scope (M-future): Mongo check (logging może gracefully degradować),
-    Celery worker ping (osobny healthcheck per service w compose).
+    Returns ``200`` with ``{"db": "ok", "redis": "ok"}`` when both succeed, or
+    ``503`` and a per-component status when one of them fails. Mongo and
+    Celery worker checks are intentionally out of scope — Mongo only carries
+    logs (graceful-degradation candidate), and each Celery container ships
+    its own ``healthcheck`` in compose.
     """
     status: dict[str, Any] = {"db": "ok", "redis": "ok"}
     status_code = 200

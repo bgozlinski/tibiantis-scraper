@@ -1,3 +1,14 @@
+"""Service layer for the deaths app.
+
+Owns two concerns:
+
+* dedup-safe insertion of new :class:`DeathEvent` rows from the spider
+  (``save_death_event``);
+* the fan-out announcement loop that delivers unannounced deaths to every
+  Discord channel whose configured threshold is met
+  (``announce_unannounced_deaths``).
+"""
+
 from datetime import datetime
 from typing import TypedDict
 import logging
@@ -13,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 
 class DeathPayload(TypedDict):
+    """Strongly-typed payload produced by the deaths spider pipeline."""
+
     character_name: str
     level_at_death: int
     killed_by: str

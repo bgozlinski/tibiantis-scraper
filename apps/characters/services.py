@@ -1,3 +1,10 @@
+"""Service layer for the characters app.
+
+All scraper pipelines and management commands must route writes through
+``upsert_character`` instead of touching the ORM directly — this keeps the
+canonicalisation rules and the race-safe retry logic in one place.
+"""
+
 from django.db import IntegrityError, transaction
 
 from apps.characters.models import Character, _canonicalize_name

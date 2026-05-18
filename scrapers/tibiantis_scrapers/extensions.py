@@ -1,3 +1,5 @@
+"""Scrapy extensions that the project plugs into the framework's signal bus."""
+
 from __future__ import annotations
 
 import logging
@@ -17,10 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 class MongoStatsExtension:
-    """Persist 1 document per `scrapy crawl <spider>` to scrape_logs (§3.2).
+    """Persist one ``scrape_logs`` document per spider run.
 
-    Wired via EXTENSIONS dict. Disabled cleanly via NotConfigured when
-    MONGO_URL is empty (dev mode without Mongo).
+    Wired through Scrapy's ``EXTENSIONS`` setting; raises
+    :class:`NotConfigured` when ``MONGO_URL`` is empty so it disables
+    cleanly in environments without Mongo (e.g. unit tests).
     """
 
     def __init__(self) -> None:
@@ -28,6 +31,7 @@ class MongoStatsExtension:
 
     @classmethod
     def from_crawler(cls, crawler: Crawler) -> "MongoStatsExtension":
+        """Subscribe to spider open/close signals or refuse to load."""
         if not django_settings.MONGO_URL:
             raise NotConfigured(
                 "MONGO_URL not configured — MongoStatsExtension disabled"
@@ -39,9 +43,11 @@ class MongoStatsExtension:
         return instance
 
     def spider_opened(self, spider: Spider) -> None:
+        """Record the run start time."""
         self.started_at = datetime.now(tz=timezone.utc)
 
     def spider_closed(self, spider: Spider, reason: str) -> None:
+        """Flush a summary document with run stats to Mongo."""
         finished_at = datetime.now(tz=timezone.utc)
         stats: dict[str, Any] = spider.crawler.stats.get_stats()
         error_count = stats.get("log_count/ERROR", 0)

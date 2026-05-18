@@ -9,6 +9,8 @@ from discord_bot.services import set_death_threshold_for_guild
 
 
 class DeathsCog(commands.Cog):
+    """Admin-side death-monitor configuration commands (``/deaths threshold``)."""
+
     deaths = discord.SlashCommandGroup("deaths", "Death monitor configuration")
 
     def __init__(self, bot: discord.Bot) -> None:

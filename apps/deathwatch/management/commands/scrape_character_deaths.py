@@ -1,3 +1,10 @@
+"""Management command that scrapes the Latest Deaths block of one character.
+
+Subprocess entry point used by the DW-5 Celery task. Keeping the Twisted
+reactor isolated from the worker process avoids the "reactor cannot be
+restarted" problem that bit the project in M3 retro #8.
+"""
+
 import asyncio
 import os
 import sys

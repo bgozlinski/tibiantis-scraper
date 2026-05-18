@@ -1,3 +1,10 @@
+"""Celery tasks for the characters app.
+
+Beat triggers :func:`scrape_watched_characters` periodically; the configured
+``CELERY_SCRAPE_FRESHNESS_MINUTES`` cutoff keeps overlapping schedules from
+producing duplicate scrapes for the same character.
+"""
+
 import logging
 import subprocess
 import sys
@@ -14,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 @shared_task
 def ping() -> str:
+    """Trivial heartbeat task used by smoke tests and ``autodiscover`` checks."""
     return "pong"
 
 

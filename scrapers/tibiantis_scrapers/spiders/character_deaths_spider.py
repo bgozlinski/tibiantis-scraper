@@ -18,9 +18,15 @@ _DEATH_TEXT_RE = re.compile(r"Killed at Level (\d+)(?: by (.+?))?\.?$")
 
 
 class CharacterDeathsSpider(scrapy.Spider):
+    """Per-character deaths spider used by the deathwatch pipeline.
+
+    Driven by a Scrapy argument: ``-a name=<character>``.
+    """
+
     name = "character_deaths"
 
     def __init__(self, name=None, *args, **kwargs):
+        """Validate ``name`` and build the profile URL."""
         super().__init__(*args, **kwargs)
         if not name:
             raise ValueError("CharacterDeathsSpider requires -a name=<character>")

@@ -1,3 +1,11 @@
+"""Notification handlers for the three event sources.
+
+Bedmage notifications (DMs), deaths announcements (channel posts) and
+deathwatch announcements (channel posts) each use their own Protocol so the
+service layer can swap implementations purely through settings — handy for
+tests (logging-only handler) and dev (no Discord token required).
+"""
+
 from __future__ import annotations
 
 import logging
@@ -21,7 +29,9 @@ class BedmageNotificationHandler(Protocol):
     Implementations swap via settings.BEDMAGE_NOTIFICATION_HANDLER (dotted path).
     """
 
-    def notify(self, watch: BedmageWatch) -> None: ...
+    def notify(self, watch: BedmageWatch) -> None:
+        """Send the bedmage notification for ``watch``; never raises."""
+        ...
 
 
 class LoggingHandler:
@@ -31,6 +41,7 @@ class LoggingHandler:
     """
 
     def notify(self, watch: BedmageWatch) -> None:
+        """Log the notification at INFO level."""
         logger.info(
             "BEDMAGE: user=%s character=%s last_login=%s",
             watch.user.username,
@@ -48,6 +59,12 @@ class DiscordDMHandler:
     """
 
     def notify(self, watch: BedmageWatch) -> None:
+        """Send the notification as a Discord DM.
+
+        Failures (HTTP error, user disabled DMs, missing ``discord_id``) are
+        logged and swallowed — the service layer treats the watch as notified
+        either way to avoid the next scrape cycle producing another attempt.
+        """
         from apps.notifications.discord_client import DiscordRESTClient
 
         try:
@@ -102,7 +119,9 @@ class DeathAnnouncementHandler(Protocol):
 
     def announce(
         self, death_event: DeathEvent, discord_channel: DiscordChannel
-    ) -> bool: ...
+    ) -> bool:
+        """Push ``death_event`` to ``discord_channel``; return ``True`` on success."""
+        ...
 
 
 class DiscordChannelHandler:
@@ -111,6 +130,7 @@ class DiscordChannelHandler:
     def announce(
         self, death_event: DeathEvent, discord_channel: DiscordChannel
     ) -> bool:
+        """Render the embed and POST it to the configured channel."""
         from apps.notifications.discord_client import DiscordRESTClient
 
         client = DiscordRESTClient()
@@ -161,6 +181,7 @@ class DeathLoggingHandler:
     def announce(
         self, death_event: DeathEvent, discord_channel: DiscordChannel
     ) -> bool:
+        """Log the announcement and report success."""
         logger.info(
             "DEATH ANNOUNCE: %s (lvl %s) → guild=%s channel=%s",
             death_event.character_name,
@@ -188,15 +209,16 @@ class DeathWatchAnnouncementHandler(Protocol):
     Implementations swap via settings.DEATHWATCH_NOTIFICATION_HANDLER.
     """
 
-    def announce(
-        self, event: WatchedDeathEvent, channel: DeathWatchChannel
-    ) -> bool: ...
+    def announce(self, event: WatchedDeathEvent, channel: DeathWatchChannel) -> bool:
+        """Push ``event`` to ``channel``; return ``True`` on success."""
+        ...
 
 
 class DeathWatchChannelHandler:
     """Implements DeathWatchAnnouncementHandler. Posts purple embed to per-guild channel."""
 
     def announce(self, event: WatchedDeathEvent, channel: DeathWatchChannel) -> bool:
+        """Render the embed and POST it to the configured deathwatch channel."""
         from apps.notifications.discord_client import DiscordRESTClient
 
         client = DiscordRESTClient()
@@ -233,6 +255,7 @@ class DeathWatchLoggingHandler:
     """Test/dev variant — logs only, returns True (success). No Discord call."""
 
     def announce(self, event: WatchedDeathEvent, channel: DeathWatchChannel) -> bool:
+        """Log the announcement and report success."""
         logger.info(
             "DEATHWATCH ANNOUNCE: %s (lvl %s) → guild=%s channel=%s",
             event.character.name,

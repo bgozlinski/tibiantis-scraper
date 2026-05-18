@@ -1,3 +1,10 @@
+"""Celery tasks for the deaths app.
+
+Beat fires :func:`scrape_deaths` periodically; the task delegates the actual
+HTTP work to a subprocess management command (Twisted reactor isolation,
+see M1 retro #8) and then triggers the channel announcement loop.
+"""
+
 import logging
 import subprocess
 import sys

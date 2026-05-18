@@ -1,3 +1,11 @@
+"""MongoDB access layer for project-wide log storage.
+
+Mongo is used **only** for logs in this project (CLAUDE.md §4). The helpers
+here lazily build a singleton :class:`pymongo.MongoClient` and create
+collection-specific indexes on first use so the logging and Scrapy pipelines
+can stay schema-free.
+"""
+
 from __future__ import annotations
 
 from typing import Optional
@@ -29,6 +37,7 @@ def get_mongo_client() -> pymongo.MongoClient:
 
 
 def get_database() -> Database:
+    """Return the configured :class:`Database` from the lazy client."""
     return get_mongo_client()[settings.MONGO_DB]
 
 
