@@ -1,3 +1,5 @@
+"""GraphQL schema for the deaths app."""
+
 from typing import cast
 import strawberry
 import strawberry_django
@@ -8,6 +10,8 @@ from apps.deaths.models import DeathEvent
 
 @strawberry_django.type(DeathEvent)
 class DeathEventType:
+    """GraphQL projection of :class:`apps.deaths.models.DeathEvent`."""
+
     id: auto
     character_name: auto
     level_at_death: auto
@@ -18,6 +22,8 @@ class DeathEventType:
 
 @strawberry.type
 class Query:
+    """Authenticated death-list queries."""
+
     @strawberry.field
     async def recent_deaths(
         self,
@@ -25,6 +31,12 @@ class Query:
         min_level: int | None = None,
         limit: int = 50,
     ) -> list[DeathEventType]:
+        """Return recent deaths above ``min_level``, newest first.
+
+        ``min_level`` falls back to ``settings.DEATH_LEVEL_THRESHOLD``. The
+        ``limit`` is clamped to the [1, 200] range to stop clients from
+        requesting arbitrarily large pages.
+        """
         request = info.context.request
         if not request.user.is_authenticated:
             raise PermissionError("Authentication required")

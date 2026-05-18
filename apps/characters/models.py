@@ -1,3 +1,11 @@
+"""Models for the characters app.
+
+The :class:`Character` row is the canonical record for a scraped Tibiantis
+character profile. Names are stored in canonical form (first letter upper,
+the rest lower) so that two scrapes coming from different sources cannot
+duplicate the same character under a different casing.
+"""
+
 from typing import Any
 
 from django.db import models
@@ -27,6 +35,22 @@ def _canonicalize_name(name: str) -> str:
 
 
 class Character(models.Model):
+    """A Tibiantis character profile.
+
+    Most of the fields mirror what the ``tibiantis.online`` profile page
+    exposes. Two timestamps are managed by the project itself:
+
+    * ``last_scraped_at`` — updated on every save (``auto_now``), used by
+      the Celery freshness gate to skip recently-scraped characters.
+    * ``last_deaths_scraped_at`` — updated by the DeathWatch spider once it
+      finishes a per-character deaths scrape, used by that scheduler to
+      pick the oldest watched character on each cycle.
+
+    The ``name`` column is unique case-insensitively via the ``Lower``
+    functional index; ``save`` canonicalises the value before writing so
+    every read returns the same shape regardless of the input casing.
+    """
+
     name = CharField(max_length=64, unique=True)
     sex = CharField(max_length=16, blank=True, default="")
     vocation = CharField(max_length=32, blank=True, default="")
@@ -50,6 +74,7 @@ class Character(models.Model):
         ]
 
     def save(self, *args: Any, **kwargs: Any) -> None:
+        """Canonicalise ``name`` before delegating to the default ``save``."""
         if self.name:
             self.name = _canonicalize_name(self.name)
         super().save(*args, **kwargs)

@@ -1,7 +1,15 @@
+"""Scrapy item definitions for the Tibiantis spiders.
+
+Items are deliberately schema-less ``Item`` subclasses — typing happens at the
+service boundary via the ``TypedDict`` payloads in ``apps/*/types.py``.
+"""
+
 from scrapy import Item, Field
 
 
 class CharacterItem(Item):
+    """Profile fields emitted by :class:`CharacterSpider`."""
+
     name = Field()
     sex = Field()
     vocation = Field()
@@ -15,6 +23,8 @@ class CharacterItem(Item):
 
 
 class DeathItem(Item):
+    """A row from the global ``tibiantis.info`` deaths feed."""
+
     character_name = Field()
     level_at_death = Field()
     killed_by = Field()

@@ -1,3 +1,5 @@
+"""Spider that scrapes the global Latest Deaths feed from ``tibiantis.info``."""
+
 import re
 import scrapy
 from scrapers.tibiantis_scrapers.items import DeathItem
@@ -6,6 +8,13 @@ from zoneinfo import ZoneInfo
 
 
 class DeathsSpider(scrapy.Spider):
+    """Scrape the Concordia deaths list and emit one :class:`DeathItem` per row.
+
+    The Tibiantis stats portal keeps the chosen server in a session cookie,
+    so every crawl first hits the "set server" URL and only then loads the
+    deaths page.
+    """
+
     name = "deaths"
 
     _LEVEL_RE = re.compile(r"\((\d+)\)")
@@ -13,7 +22,7 @@ class DeathsSpider(scrapy.Spider):
     _DEATHS_URL = "https://tibiantis.info/stats/deaths"
 
     def start_requests(self):
-        # najpierw przełącz sesję na Concordia
+        """Switch the session to the Concordia server before scraping."""
         yield scrapy.Request(
             self._SET_SERVER_URL,
             callback=self._after_server_switch,
@@ -21,9 +30,15 @@ class DeathsSpider(scrapy.Spider):
         )
 
     def _after_server_switch(self, response):
+        """Once the cookie is set, fetch the deaths page."""
         yield scrapy.Request(self._DEATHS_URL, callback=self.parse)
 
     def parse(self, response):
+        """Yield one :class:`DeathItem` per data row of the deaths table.
+
+        Skips the header row (slice ``[1:]``) and silently drops malformed
+        rows with a warning instead of aborting the whole crawl.
+        """
         rows = response.css("table.mytab.long tr")[1:]
 
         if not rows:

@@ -37,6 +37,8 @@ from apps.deathwatch.services import (
 
 @strawberry_django.type(DeathWatch)
 class DeathWatchType:
+    """GraphQL projection of :class:`apps.deathwatch.models.DeathWatch`."""
+
     id: auto
     created_at: auto
     active: auto
@@ -62,6 +64,8 @@ class DeathWatchType:
 
 @strawberry_django.type(WatchedDeathEvent)
 class WatchedDeathEventType:
+    """GraphQL projection of :class:`WatchedDeathEvent`."""
+
     id: auto
     level_at_death: auto
     killed_by: auto
@@ -85,6 +89,7 @@ class DeathWatchChannelType:
 
 
 def _require_auth(info: strawberry.Info) -> User:
+    """Resolve the authenticated user from the GraphQL context or raise."""
     request = info.context.request
     if not request.user.is_authenticated:
         raise PermissionError("Authentication required")
@@ -92,6 +97,7 @@ def _require_auth(info: strawberry.Info) -> User:
 
 
 def _require_superuser(info: strawberry.Info) -> User:
+    """Same as :func:`_require_auth` but also enforces ``is_superuser``."""
     user = _require_auth(info)
     if not user.is_superuser:
         raise PermissionError("Superuser required")
@@ -138,10 +144,13 @@ class Query:
 
 @strawberry.type
 class Mutation:
+    """Authenticated mutations for the deathwatch app."""
+
     @strawberry.mutation
     async def add_death_watch(
         self, info: strawberry.Info, character_name: str
     ) -> DeathWatchType:
+        """Subscribe the user to deaths of ``character_name``."""
         user = _require_auth(info)
         watch = await sync_to_async(add_death_watch)(user, character_name)
         return cast("DeathWatchType", watch)
@@ -150,6 +159,7 @@ class Mutation:
     async def remove_death_watch(
         self, info: strawberry.Info, character_name: str
     ) -> bool:
+        """Drop the user's deathwatch for ``character_name``; idempotent."""
         user = _require_auth(info)
         deleted = await sync_to_async(remove_death_watch)(user, character_name)
         return deleted

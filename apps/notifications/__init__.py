@@ -1,3 +1,10 @@
+"""Notifications package.
+
+Resolves the notification handler implementations from settings on every call
+so that ``@override_settings`` in tests can swap them out without rebuilding
+any cached state. Real implementations live in :mod:`apps.notifications.handlers`.
+"""
+
 from typing import cast
 
 from django.conf import settings
@@ -22,6 +29,7 @@ def get_bedmage_handler() -> BedmageNotificationHandler:
 
 
 def get_death_handler() -> DeathAnnouncementHandler:  # NEW M8
+    """Resolve :class:`DeathAnnouncementHandler` from ``DEATH_NOTIFICATION_HANDLER``."""
     handler_class = import_string(settings.DEATH_NOTIFICATION_HANDLER)
     return cast(DeathAnnouncementHandler, handler_class())
 

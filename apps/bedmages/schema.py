@@ -1,3 +1,10 @@
+"""GraphQL schema for the bedmages app.
+
+All queries and mutations require authentication. The schema is intentionally
+thin: it forwards work to :mod:`apps.bedmages.services` instead of
+re-implementing the lifecycle rules in resolvers.
+"""
+
 from typing import cast
 
 import strawberry
@@ -14,6 +21,8 @@ from apps.characters.schema import CharacterType
 
 @strawberry_django.type(BedmageWatch)
 class BedmageWatchType:
+    """GraphQL projection of :class:`apps.bedmages.models.BedmageWatch`."""
+
     id: auto
     created_at: auto
     last_notified_login: auto
@@ -23,8 +32,11 @@ class BedmageWatchType:
 
 @strawberry.type
 class Query:
+    """Authenticated queries for bedmage subscriptions."""
+
     @strawberry.field
     async def my_bedmages(self, info: strawberry.Info) -> list[BedmageWatchType]:
+        """Return the requesting user's watches, newest first."""
         request = info.context.request
         if not request.user.is_authenticated:
             raise PermissionError("Authentication required")
@@ -39,10 +51,13 @@ class Query:
 
 @strawberry.type
 class Mutation:
+    """Authenticated mutations that mutate the user's bedmage list."""
+
     @strawberry.mutation
     async def add_bedmage_watch(
         self, info: strawberry.Info, character_name: str
     ) -> BedmageWatchType:
+        """Subscribe the user to bedmage notifications for ``character_name``."""
         request = info.context.request
         if not request.user.is_authenticated:
             raise PermissionError("Authentication required")
@@ -56,6 +71,11 @@ class Mutation:
     async def remove_bedmage_watch(
         self, info: strawberry.Info, character_name: str
     ) -> bool:
+        """Remove the user's watch for ``character_name``; idempotent.
+
+        Returns ``True`` if a row was deleted, ``False`` if no matching
+        watch was found.
+        """
         request = info.context.request
         if not request.user.is_authenticated:
             raise PermissionError("Authentication required")

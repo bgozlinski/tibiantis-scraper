@@ -1,3 +1,12 @@
+"""Management command that scrapes a single Tibiantis character profile.
+
+The command is the subprocess target invoked by
+:func:`apps.characters.tasks.scrape_watched_characters`. Running each scrape
+in its own process is the safe way to integrate Scrapy's Twisted reactor with
+Celery — see M1 retro #8 (a CrawlerProcess cannot be started twice in the
+same interpreter).
+"""
+
 import asyncio
 import os
 import sys
@@ -22,11 +31,19 @@ setup()
 
 
 class Command(BaseCommand):
+    """``manage.py scrape_character <name>`` — crawl a single profile."""
+
     def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument("name", type=str)
 
     @wait_for(timeout=60.0)
     def _run_crawl(self, name: str) -> Any:
+        """Start the Scrapy crawl through crochet's reactor bridge.
+
+        ``wait_for`` blocks the calling thread until the deferred returned by
+        ``runner.crawl`` resolves, or 60 seconds elapse — whichever comes
+        first.
+        """
         settings = get_project_settings()
         runner = CrawlerRunner(settings)
         from scrapers.tibiantis_scrapers.spiders.character_spider import CharacterSpider

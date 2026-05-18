@@ -1,3 +1,10 @@
+"""Service layer for the bedmages app.
+
+Owns the bedmage subscription lifecycle (add / remove / reactivate) and the
+notification-firing rule that the periodic Celery task drives every five
+minutes.
+"""
+
 import logging
 from datetime import timedelta
 from django.utils import timezone

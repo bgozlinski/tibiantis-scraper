@@ -1,3 +1,9 @@
+"""Management command that scrapes the public deaths list.
+
+Always invoked by the Celery ``scrape_deaths`` task in a fresh subprocess so
+the Twisted reactor can be reused safely across runs.
+"""
+
 import json
 from typing import Any
 
@@ -9,9 +15,16 @@ from scrapers.tibiantis_scrapers.spiders.deaths_spider import DeathsSpider
 
 
 class Command(BaseCommand):
+    """``manage.py scrape_deaths`` — run the deaths spider once."""
+
     help = "Scrape latest deaths from tibiantis.info/stats/deaths"
 
     def handle(self, *args: Any, **options: Any) -> None:
+        """Crawl the deaths page and print a JSON summary to stdout.
+
+        The summary (``{"yielded": int, "duplicates": int}``) is parsed by
+        the Celery wrapper for observability.
+        """
         settings = get_project_settings()
         process = CrawlerProcess(settings=settings, install_root_handler=False)
         crawler = process.create_crawler(DeathsSpider)

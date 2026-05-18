@@ -1,3 +1,11 @@
+"""Project-level GraphQL view wired with JWT authentication.
+
+Strawberry's stock async view does not understand DRF SimpleJWT tokens, so
+we subclass it and run :class:`JWTAuthentication` before each request to
+populate ``request.user``. Schema resolvers can then check
+``info.context.request.user.is_authenticated`` exactly like REST views do.
+"""
+
 from typing import Any
 from django.http import HttpRequest, HttpResponseBase
 from asgiref.sync import sync_to_async
@@ -9,9 +17,12 @@ from rest_framework.request import Request as DRFRequest
 
 
 class JWTAsyncGraphQLView(AsyncGraphQLView):
+    """Async GraphQL view that authenticates JWT tokens before dispatching."""
+
     async def dispatch(  # type: ignore[override]
         self, request: HttpRequest, *args: Any, **kwargs: Any
     ) -> HttpResponseBase:
+        """Resolve the JWT token to a user, then delegate to the parent view."""
         _authenticator = JWTAuthentication()
         try:
             auth_result: tuple[Any, Any] | None = await sync_to_async(

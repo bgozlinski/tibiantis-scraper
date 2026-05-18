@@ -1,3 +1,10 @@
+"""Logging handlers that push records into MongoDB.
+
+Wired into Django's ``LOGGING`` setting via the ``()`` factory pattern so the
+config can fall back to a :class:`logging.NullHandler` when ``MONGO_URL`` is
+empty (dev mode without Mongo).
+"""
+
 from __future__ import annotations
 
 import logging
@@ -18,10 +25,17 @@ class MongoLogHandler(logging.Handler):
     """
 
     def __init__(self) -> None:
+        """Use a default :class:`logging.Formatter` so ``emit`` can format exceptions."""
         super().__init__()
         self.setFormatter(logging.Formatter())
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Serialise ``record`` into a Mongo document and insert it.
+
+        On any error (Mongo down, network blip, serialisation oddity) the
+        handler delegates to :meth:`logging.Handler.handleError`, which writes
+        a formatted message to ``stderr``. Logging must never break the app.
+        """
         try:
             doc: dict[str, object] = {
                 "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc),

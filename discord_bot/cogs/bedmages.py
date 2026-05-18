@@ -13,6 +13,8 @@ from discord_bot.services import (
 
 
 class BedmageCog(commands.Cog):
+    """Slash commands for the per-user bedmage list (``/bedmage add|remove|list``)."""
+
     bedmage = discord.SlashCommandGroup("bedmage", "Manage your bedmage tracking list")
 
     def __init__(self, bot: discord.Bot) -> None:

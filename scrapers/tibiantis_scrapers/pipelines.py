@@ -1,3 +1,9 @@
+"""Scrapy item pipeline that hands every item to the Django service layer.
+
+CLAUDE.md §6 forbids spiders from touching the Django ORM directly — the
+pipeline is the only place that bridges Scrapy items into ``apps.*.services``.
+"""
+
 from asgiref.sync import sync_to_async
 from scrapers.tibiantis_scrapers.items import (
     CharacterDeathItem,
@@ -7,7 +13,14 @@ from scrapers.tibiantis_scrapers.items import (
 
 
 class DjangoPipeline:
+    """Route each item type to the right Django service function.
+
+    Service calls are sync, but the Scrapy 2.11+ pipeline interface is async,
+    hence the ``sync_to_async`` wrapper around every dispatch.
+    """
+
     async def process_item(self, item, spider):
+        """Dispatch ``item`` to the matching service and return it unchanged."""
         if isinstance(item, CharacterItem):
             from apps.characters.services import upsert_character
 

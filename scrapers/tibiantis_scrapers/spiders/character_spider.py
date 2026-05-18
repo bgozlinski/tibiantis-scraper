@@ -1,3 +1,5 @@
+"""Spider that scrapes a single character profile from ``tibiantis.online``."""
+
 from datetime import datetime
 
 import scrapy
@@ -7,9 +9,15 @@ from scrapers.tibiantis_scrapers.utils.dates import parse_tibiantis_timestamp
 
 
 class CharacterSpider(scrapy.Spider):
+    """Crawl one character's profile and emit a :class:`CharacterItem`.
+
+    The character name is passed as a Scrapy argument: ``-a name=Yhral``.
+    """
+
     name = "character"
 
     def __init__(self, name=None, *args, **kwargs):
+        """Validate the ``name`` argument and build the start URL."""
         super().__init__(*args, **kwargs)
 
         if not name:
@@ -27,6 +35,13 @@ class CharacterSpider(scrapy.Spider):
         return parse_tibiantis_timestamp(raw)
 
     def parse(self, response):
+        """Parse the profile table into a :class:`CharacterItem`.
+
+        Walks the ``<tr class="hover">`` rows of the first ``table.tabi``,
+        treating the first cell as the field name and the second cell as the
+        value. Returns silently when the page does not contain the expected
+        table (e.g. the character does not exist).
+        """
         rows = response.css("table.tabi tr.hover")
 
         if not rows:

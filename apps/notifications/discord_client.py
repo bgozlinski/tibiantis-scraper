@@ -1,3 +1,10 @@
+"""Synchronous Discord REST client used by the notification handlers.
+
+The bot itself runs as a separate process built on top of ``discord.py``; this
+module is the path used by Celery tasks that just need to push a message and
+do not want to open a gateway connection.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -11,11 +18,11 @@ logger = logging.getLogger(__name__)
 
 
 class DiscordRESTClient:
-    """Sync httpx client dla Discord REST API.
+    """Thin synchronous wrapper around the Discord REST API.
 
-    Bot token z settings.DISCORD_BOT_TOKEN (lazy, per-instance). Każdy
-    send_* call otwiera/zamyka httpx.Client przez context manager —
-    connection pooling lokalne dla jednego callu, no leak risk.
+    The bot token is read from ``settings.DISCORD_BOT_TOKEN`` on construction.
+    Every ``send_*`` call opens and closes its own :class:`httpx.Client` via a
+    context manager so no connection leaks across requests.
     """
 
     BASE_URL = "https://discord.com/api/v10"
@@ -25,11 +32,12 @@ class DiscordRESTClient:
         self.bot_token = bot_token or settings.DISCORD_BOT_TOKEN
 
     def send_dm(self, user_discord_id: int, content: str) -> bool:
-        """Wyślij DM do user'a po Discord snowflake.
+        """Send a direct message identified by the user's Discord snowflake.
 
-        2-step flow: POST /users/@me/channels {"recipient_id": id} →
-        channel_id, potem POST /channels/{channel_id}/messages.
-        Returns True przy 2xx (final message), False przy 4xx/5xx (po retry).
+        Two-step flow: ``POST /users/@me/channels {"recipient_id": id}`` to
+        get a DM channel, then ``POST /channels/{channel_id}/messages``.
+        Returns ``True`` on a successful final message response, ``False`` on
+        any 4xx/5xx (after the single retry handled by :meth:`_post`).
         """
         channel_response = self._post(
             f"{self.BASE_URL}/users/@me/channels",
@@ -57,7 +65,7 @@ class DiscordRESTClient:
         content: str | None = None,
         embed: dict[str, Any] | None = None,
     ) -> bool:
-        """Wyślij wiadomość do kanału. Content LUB embed (oba dozwolone)."""
+        """Send a message to ``channel_id``; ``content`` and ``embed`` are both optional."""
         body: dict[str, Any] = {}
         if content is not None:
             body["content"] = content
@@ -71,7 +79,7 @@ class DiscordRESTClient:
         return response is not None
 
     def _post(self, url: str, json_body: dict[str, Any]) -> httpx.Response | None:
-        """POST helper z 1-retry na 5xx/429. Returns Response (2xx) or None."""
+        """POST helper with one retry on 5xx/429; returns the 2xx response or ``None``."""
         if not self.bot_token:
             logger.error("DISCORD_BOT_TOKEN empty — outbound disabled")
             return None

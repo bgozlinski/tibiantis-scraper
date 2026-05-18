@@ -1,3 +1,10 @@
+"""Merged GraphQL schema exposed at ``/graphql/``.
+
+Each Django app keeps its slice of the schema in ``apps/<feature>/schema.py``
+and this module just merges them — adding a new app means importing its
+``Query`` / ``Mutation`` and listing it in the merge call.
+"""
+
 import strawberry
 from strawberry.tools import merge_types
 from apps.accounts.schema import Query as AccountsQuery

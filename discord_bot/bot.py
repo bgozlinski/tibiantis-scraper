@@ -1,3 +1,11 @@
+"""Discord bot entry point.
+
+The bot exposes a single module-level :class:`discord.Bot` singleton so cog
+registration in tests and in the live process happen against the same
+instance. The actual loop is started by the ``run_discord_bot`` management
+command.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -13,6 +21,12 @@ bot = discord.Bot(intents=intents)  # type: ignore[no-untyped-call]
 
 @bot.event
 async def on_ready() -> None:
+    """Sync slash commands once the gateway connection is established.
+
+    When ``DISCORD_DEV_GUILD_ID`` is set the sync is scoped to that one
+    guild (instant), otherwise it goes global (Discord-side propagation
+    can take up to an hour).
+    """
     assert bot.user is not None  # on_ready fires only after login
     logger.info("Bot logged in as %s (id=%s)", bot.user, bot.user.id)
     if settings.DISCORD_DEV_GUILD_ID:
@@ -27,6 +41,7 @@ async def on_ready() -> None:
 async def on_application_command_error(
     ctx: discord.ApplicationContext, error: discord.DiscordException
 ) -> None:
+    """Global slash-command error handler — never leaks a stack trace to chat."""
     logger.exception("Slash command error in /%s: %s", ctx.command, error)
     msg = "❌ Something went wrong. The admins have been notified."
     if ctx.response.is_done():

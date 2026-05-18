@@ -1,3 +1,11 @@
+"""Bot-side service layer.
+
+Cogs are kept small and delegate everything to this module so the Django ORM
+calls live in one place. Functions here also bridge the Discord-side identity
+(``discord_id``) with the Django ``User`` model, auto-creating users on first
+contact.
+"""
+
 from __future__ import annotations
 
 import logging
