@@ -13,11 +13,16 @@ class DiscordChannel(models.Model):
     ``death_level_threshold`` is the minimum character level a death must
     have for the announcement task to push it into this channel. The
     ``guild_id`` unique constraint ensures one configuration row per guild.
+
+    ``cleanup_enabled`` + ``last_cleanup_at`` were added 2026-06-01 to
+    drive the 3-day auto-purge feature (opt-in per guild, default OFF).
     """
 
     guild_id = models.BigIntegerField()
     channel_id = models.BigIntegerField()
     death_level_threshold = models.PositiveIntegerField(default=30)
+    cleanup_enabled = models.BooleanField(default=False)
+    last_cleanup_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
