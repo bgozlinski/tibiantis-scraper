@@ -188,3 +188,218 @@ def test_deaths_cog_has_slash_command_group_at_class_level() -> None:
     """
     assert isinstance(DeathsCog.deaths, discord.SlashCommandGroup)
     assert DeathsCog.deaths.name == "deaths"
+
+
+# === helper ===
+
+
+def _admin_ctx() -> MagicMock:
+    """Build a MagicMock ctx that looks like an admin in a guild."""
+    ctx = MagicMock(spec=discord.ApplicationContext)
+    ctx.guild = MagicMock()
+    ctx.guild.id = 1
+    ctx.channel_id = 42
+    ctx.author = MagicMock(spec=discord.Member)
+    ctx.author.guild_permissions.administrator = True
+    ctx.respond = AsyncMock()
+    return ctx
+
+
+# ─── /deaths cleanup on ────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cleanup_on_rejects_dm_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_ctx = MagicMock(spec=discord.ApplicationContext)
+    mock_ctx.guild = None
+    mock_ctx.respond = AsyncMock()
+
+    spy = MagicMock()
+    monkeypatch.setattr("discord_bot.cogs.deaths.enable_cleanup_for_guild", spy)
+
+    cog = DeathsCog(bot=MagicMock())
+    await cog.cleanup_on.callback(cog, mock_ctx)
+
+    args, kwargs = mock_ctx.respond.call_args
+    assert "must be used in a server" in args[0]
+    assert kwargs["ephemeral"] is True
+    spy.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_on_rejects_non_admin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_ctx = MagicMock(spec=discord.ApplicationContext)
+    mock_ctx.guild = MagicMock()
+    mock_ctx.guild.id = 1
+    mock_ctx.author = MagicMock(spec=discord.Member)
+    mock_ctx.author.guild_permissions.administrator = False
+    mock_ctx.respond = AsyncMock()
+
+    spy = MagicMock()
+    monkeypatch.setattr("discord_bot.cogs.deaths.enable_cleanup_for_guild", spy)
+
+    cog = DeathsCog(bot=MagicMock())
+    await cog.cleanup_on.callback(cog, mock_ctx)
+
+    args, kwargs = mock_ctx.respond.call_args
+    assert "Server admins only" in args[0]
+    assert kwargs["ephemeral"] is True
+    spy.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_on_warns_when_channel_not_registered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Service returns False (no row) → cog tells admin to run /threshold first."""
+    mock_ctx = _admin_ctx()
+    monkeypatch.setattr(
+        "discord_bot.cogs.deaths.enable_cleanup_for_guild",
+        MagicMock(return_value=False),
+    )
+
+    cog = DeathsCog(bot=MagicMock())
+    await cog.cleanup_on.callback(cog, mock_ctx)
+
+    args, kwargs = mock_ctx.respond.call_args
+    assert "Run `/deaths threshold` first" in args[0]
+    assert kwargs["ephemeral"] is True
+
+
+@pytest.mark.asyncio
+async def test_cleanup_on_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_ctx = _admin_ctx()
+    monkeypatch.setattr(
+        "discord_bot.cogs.deaths.enable_cleanup_for_guild",
+        MagicMock(return_value=True),
+    )
+
+    cog = DeathsCog(bot=MagicMock())
+    await cog.cleanup_on.callback(cog, mock_ctx)
+
+    args, kwargs = mock_ctx.respond.call_args
+    assert "Cleanup enabled" in args[0]
+    # Public ack (no ephemeral kwarg)
+    assert "ephemeral" not in kwargs or kwargs["ephemeral"] is False
+
+
+# ─── /deaths cleanup off ───────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cleanup_off_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_ctx = _admin_ctx()
+    monkeypatch.setattr(
+        "discord_bot.cogs.deaths.disable_cleanup_for_guild",
+        MagicMock(return_value=True),
+    )
+
+    cog = DeathsCog(bot=MagicMock())
+    await cog.cleanup_off.callback(cog, mock_ctx)
+
+    args, _ = mock_ctx.respond.call_args
+    assert "Cleanup disabled" in args[0]
+
+
+# ─── /deaths cleanup status ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cleanup_status_renders_never_when_no_runs_yet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_ctx = _admin_ctx()
+    monkeypatch.setattr(
+        "discord_bot.cogs.deaths.get_cleanup_status",
+        MagicMock(
+            return_value={"enabled": True, "last_cleanup_at": None, "channel_id": 42}
+        ),
+    )
+
+    cog = DeathsCog(bot=MagicMock())
+    await cog.cleanup_status.callback(cog, mock_ctx)
+
+    args, kwargs = mock_ctx.respond.call_args
+    text = args[0] if args else kwargs.get("content", "")
+    assert "never" in text.lower()
+    assert kwargs["ephemeral"] is True
+
+
+@pytest.mark.asyncio
+async def test_cleanup_status_warns_when_channel_not_registered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_ctx = _admin_ctx()
+    monkeypatch.setattr(
+        "discord_bot.cogs.deaths.get_cleanup_status", MagicMock(return_value=None)
+    )
+
+    cog = DeathsCog(bot=MagicMock())
+    await cog.cleanup_status.callback(cog, mock_ctx)
+
+    args, kwargs = mock_ctx.respond.call_args
+    assert "Run `/deaths threshold` first" in args[0]
+    assert kwargs["ephemeral"] is True
+
+
+# ─── /deaths cleanup now ───────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cleanup_now_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_ctx = _admin_ctx()
+    mock_ctx.defer = AsyncMock()
+    mock_ctx.followup = MagicMock()
+    mock_ctx.followup.send = AsyncMock()
+
+    from discord_bot.models import DiscordChannel
+
+    fake_channel = DiscordChannel(guild_id=1, channel_id=42)
+    monkeypatch.setattr(
+        "discord_bot.cogs.deaths._fetch_channel_for_guild",
+        MagicMock(return_value=fake_channel),
+    )
+    monkeypatch.setattr(
+        "discord_bot.cogs.deaths.cleanup_death_channel",
+        MagicMock(return_value={"deleted": 17}),
+    )
+
+    cog = DeathsCog(bot=MagicMock())
+    await cog.cleanup_now.callback(cog, mock_ctx)
+
+    mock_ctx.defer.assert_called_once()
+    args, _ = mock_ctx.followup.send.call_args
+    assert "Deleted 17" in args[0]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_now_handles_cleanup_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.deaths.services import CleanupError
+    from discord_bot.models import DiscordChannel
+
+    mock_ctx = _admin_ctx()
+    mock_ctx.defer = AsyncMock()
+    mock_ctx.followup = MagicMock()
+    mock_ctx.followup.send = AsyncMock()
+
+    monkeypatch.setattr(
+        "discord_bot.cogs.deaths._fetch_channel_for_guild",
+        MagicMock(return_value=DiscordChannel(guild_id=1, channel_id=42)),
+    )
+    monkeypatch.setattr(
+        "discord_bot.cogs.deaths.cleanup_death_channel",
+        MagicMock(side_effect=CleanupError("simulated")),
+    )
+
+    cog = DeathsCog(bot=MagicMock())
+    await cog.cleanup_now.callback(cog, mock_ctx)
+
+    args, kwargs = mock_ctx.followup.send.call_args
+    assert "Cleanup failed" in args[0]
+    assert kwargs.get("ephemeral") is True
