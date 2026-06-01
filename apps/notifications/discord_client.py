@@ -17,6 +17,15 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 
+class BulkDeleteAgeError(Exception):
+    """Raised when Discord rejects bulk-delete because >=1 message is >14d old.
+
+    Service layer (``apps/deaths/services.py::cleanup_death_channel``) catches
+    this and falls back to per-message DELETE for the offending chunk. Discord
+    error code: 50034.
+    """
+
+
 class DiscordRESTClient:
     """Thin synchronous wrapper around the Discord REST API.
 
@@ -109,6 +118,41 @@ class DiscordRESTClient:
         if not isinstance(result, list):
             return []
         return result
+
+    def bulk_delete_messages(self, channel_id: int, message_ids: list[int]) -> bool:
+        """POST /channels/{id}/messages/bulk-delete.
+
+        Discord requirements:
+        - ``2 <= len(message_ids) <= 100``
+        - all messages < 14 days old (else error code 50034)
+
+        Returns ``True`` on 204, ``False`` on permission/non-age 4xx, raises
+        :class:`BulkDeleteAgeError` on 400 with code 50034 (caller falls back
+        to per-message delete).
+        """
+        body = {"messages": [str(mid) for mid in message_ids]}
+        response = self._request(
+            "POST",
+            f"{self.BASE_URL}/channels/{channel_id}/messages/bulk-delete",
+            json_body=body,
+        )
+        if response is None:
+            return False
+
+        if 200 <= response.status_code < 300:
+            return True
+
+        if response.status_code == 400:
+            try:
+                code = response.json().get("code")
+            except (ValueError, TypeError):
+                code = None
+            if code == 50034:
+                raise BulkDeleteAgeError(
+                    f"channel_id={channel_id} has >=1 message older than 14 days"
+                )
+
+        return False
 
     def _post(self, url: str, json_body: dict[str, Any]) -> httpx.Response | None:
         """Thin POST wrapper preserving the existing notification-sender API.

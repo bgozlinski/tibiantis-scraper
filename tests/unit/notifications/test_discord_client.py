@@ -8,7 +8,10 @@ from typing import Any
 import httpx
 import pytest
 
-from apps.notifications.discord_client import DiscordRESTClient
+from apps.notifications.discord_client import (
+    BulkDeleteAgeError,
+    DiscordRESTClient,
+)
 
 
 class MockHttpx:
@@ -331,3 +334,60 @@ def test_fetch_channel_messages_retries_on_5xx(mock_httpx: MockHttpx) -> None:
 
     assert result == [{"id": "1"}]
     assert len(mock_httpx.requests) == 2
+
+
+# === bulk_delete_messages ===
+
+
+def test_bulk_delete_messages_happy_path(mock_httpx: MockHttpx) -> None:
+    """POST /channels/{id}/messages/bulk-delete with body={'messages': [...]}.
+
+    Discord requires the IDs as strings in the body.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert "/channels/12/messages/bulk-delete" in str(request.url)
+        body = request.read()
+        # Discord wants strings, not ints
+        assert b'"100"' in body
+        assert b'"200"' in body
+        return httpx.Response(204)  # success: no content
+
+    mock_httpx.set_handler(handler)
+    client = DiscordRESTClient(bot_token="tok")
+
+    ok = client.bulk_delete_messages(channel_id=12, message_ids=[100, 200])
+
+    assert ok is True
+
+
+def test_bulk_delete_messages_raises_age_error_on_50034(
+    mock_httpx: MockHttpx,
+) -> None:
+    """Discord returns 400 with code 50034 when any message is >14 days old.
+
+    Service layer catches this to fall back to single-delete (any age).
+    """
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={"code": 50034, "message": "You can only bulk delete messages..."},
+        )
+
+    mock_httpx.set_handler(handler)
+    client = DiscordRESTClient(bot_token="tok")
+
+    with pytest.raises(BulkDeleteAgeError):
+        client.bulk_delete_messages(channel_id=1, message_ids=[1, 2])
+
+
+def test_bulk_delete_messages_returns_false_on_403(mock_httpx: MockHttpx) -> None:
+    """Bot lacks MANAGE_MESSAGES → 403 → False, NOT raise. Service treats as failure."""
+    mock_httpx.set_handler(lambda _r: httpx.Response(403, json={"code": 50013}))
+    client = DiscordRESTClient(bot_token="tok")
+
+    ok = client.bulk_delete_messages(channel_id=1, message_ids=[1, 2])
+
+    assert ok is False
