@@ -22,6 +22,25 @@ from discord_bot.models import DiscordChannel
 
 logger = logging.getLogger(__name__)
 
+# Death-channel cleanup constants (added 2026-06-01, see spec
+# 2026-06-01-death-channel-cleanup-design.md).
+RETENTION_DAYS = 3
+DISCORD_EPOCH_MS = 1420070400000
+
+
+def snowflake_for_datetime(dt: datetime) -> int:
+    """Encode a UTC datetime as a Discord snowflake (high 42 bits = timestamp).
+
+    Discord message IDs are monotonically time-ordered, so passing this
+    value as the ``before=`` query parameter on
+    ``GET /channels/{id}/messages`` returns only messages older than ``dt``
+    without scanning the whole channel. Lower 22 bits (worker/process/seq)
+    are zero — fine for a *boundary* (we want "everything before this
+    timestamp", not a specific message).
+    """
+    unix_ms = int(dt.timestamp() * 1000)
+    return (unix_ms - DISCORD_EPOCH_MS) << 22
+
 
 class DeathPayload(TypedDict):
     """Strongly-typed payload produced by the deaths spider pipeline."""
