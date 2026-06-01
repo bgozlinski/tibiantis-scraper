@@ -391,3 +391,40 @@ def test_bulk_delete_messages_returns_false_on_403(mock_httpx: MockHttpx) -> Non
     ok = client.bulk_delete_messages(channel_id=1, message_ids=[1, 2])
 
     assert ok is False
+
+
+# === delete_message ===
+
+
+def test_delete_message_happy_path(mock_httpx: MockHttpx) -> None:
+    """DELETE /channels/{cid}/messages/{mid} → 204 → True."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "DELETE"
+        assert "/channels/12/messages/100" in str(request.url)
+        return httpx.Response(204)
+
+    mock_httpx.set_handler(handler)
+    client = DiscordRESTClient(bot_token="tok")
+
+    assert client.delete_message(channel_id=12, message_id=100) is True
+
+
+def test_delete_message_treats_404_as_success(mock_httpx: MockHttpx) -> None:
+    """Already-deleted message → 404 → True (idempotent semantics).
+
+    Cleanup may race with a manual delete by an admin; treating 404 as
+    success keeps the task from logging spurious failures.
+    """
+    mock_httpx.set_handler(lambda _r: httpx.Response(404, json={"code": 10008}))
+    client = DiscordRESTClient(bot_token="tok")
+
+    assert client.delete_message(channel_id=1, message_id=1) is True
+
+
+def test_delete_message_returns_false_on_403(mock_httpx: MockHttpx) -> None:
+    """Missing permissions → 403 → False."""
+    mock_httpx.set_handler(lambda _r: httpx.Response(403, json={"code": 50013}))
+    client = DiscordRESTClient(bot_token="tok")
+
+    assert client.delete_message(channel_id=1, message_id=1) is False

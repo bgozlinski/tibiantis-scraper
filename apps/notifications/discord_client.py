@@ -154,6 +154,28 @@ class DiscordRESTClient:
 
         return False
 
+    def delete_message(self, channel_id: int, message_id: int) -> bool:
+        """DELETE /channels/{cid}/messages/{mid} — single-message fallback.
+
+        Used by ``cleanup_death_channel`` when:
+        1. a chunk is size 1 (bulk-delete requires ``N >= 2``);
+        2. bulk-delete raised :class:`BulkDeleteAgeError` (any-age single
+           deletes are allowed).
+
+        Treats 404 as success (idempotent — message already gone).
+        """
+        response = self._request(
+            "DELETE",
+            f"{self.BASE_URL}/channels/{channel_id}/messages/{message_id}",
+        )
+        if response is None:
+            return False
+        if 200 <= response.status_code < 300:
+            return True
+        if response.status_code == 404:
+            return True
+        return False
+
     def _post(self, url: str, json_body: dict[str, Any]) -> httpx.Response | None:
         """Thin POST wrapper preserving the existing notification-sender API.
 
