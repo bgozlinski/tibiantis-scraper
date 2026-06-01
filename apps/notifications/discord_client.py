@@ -17,6 +17,15 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 
+class BulkDeleteAgeError(Exception):
+    """Raised when Discord rejects bulk-delete because >=1 message is >14d old.
+
+    Service layer (``apps/deaths/services.py::cleanup_death_channel``) catches
+    this and falls back to per-message DELETE for the offending chunk. Discord
+    error code: 50034.
+    """
+
+
 class DiscordRESTClient:
     """Thin synchronous wrapper around the Discord REST API.
 
@@ -78,8 +87,121 @@ class DiscordRESTClient:
         )
         return response is not None
 
+    def fetch_channel_messages(
+        self,
+        channel_id: int,
+        before: int | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """GET /channels/{id}/messages — paginated message list.
+
+        Returns the parsed JSON list (empty list on any non-2xx). ``before``
+        is a Discord snowflake; Discord IDs are time-ordered, so
+        ``before=<snowflake_of_cutoff>`` yields messages older than the
+        cutoff. Used by the death-channel cleanup feature (added 2026-06-01).
+        """
+        params: dict[str, Any] = {"limit": str(limit)}
+        if before is not None:
+            params["before"] = str(before)
+
+        response = self._request(
+            "GET",
+            f"{self.BASE_URL}/channels/{channel_id}/messages",
+            params=params,
+        )
+        if response is None or response.status_code >= 400:
+            return []
+        try:
+            result = response.json()
+        except (ValueError, TypeError):
+            return []
+        if not isinstance(result, list):
+            return []
+        return result
+
+    def bulk_delete_messages(self, channel_id: int, message_ids: list[int]) -> bool:
+        """POST /channels/{id}/messages/bulk-delete.
+
+        Discord requirements:
+        - ``2 <= len(message_ids) <= 100``
+        - all messages < 14 days old (else error code 50034)
+
+        Returns ``True`` on 204, ``False`` on permission/non-age 4xx, raises
+        :class:`BulkDeleteAgeError` on 400 with code 50034 (caller falls back
+        to per-message delete).
+        """
+        body = {"messages": [str(mid) for mid in message_ids]}
+        response = self._request(
+            "POST",
+            f"{self.BASE_URL}/channels/{channel_id}/messages/bulk-delete",
+            json_body=body,
+        )
+        if response is None:
+            return False
+
+        if 200 <= response.status_code < 300:
+            return True
+
+        if response.status_code == 400:
+            try:
+                code = response.json().get("code")
+            except (ValueError, TypeError):
+                code = None
+            if code == 50034:
+                raise BulkDeleteAgeError(
+                    f"channel_id={channel_id} has >=1 message older than 14 days"
+                )
+
+        return False
+
+    def delete_message(self, channel_id: int, message_id: int) -> bool:
+        """DELETE /channels/{cid}/messages/{mid} — single-message fallback.
+
+        Used by ``cleanup_death_channel`` when:
+        1. a chunk is size 1 (bulk-delete requires ``N >= 2``);
+        2. bulk-delete raised :class:`BulkDeleteAgeError` (any-age single
+           deletes are allowed).
+
+        Treats 404 as success (idempotent — message already gone).
+        """
+        response = self._request(
+            "DELETE",
+            f"{self.BASE_URL}/channels/{channel_id}/messages/{message_id}",
+        )
+        if response is None:
+            return False
+        if 200 <= response.status_code < 300:
+            return True
+        if response.status_code == 404:
+            return True
+        return False
+
     def _post(self, url: str, json_body: dict[str, Any]) -> httpx.Response | None:
-        """POST helper with one retry on 5xx/429; returns the 2xx response or ``None``."""
+        """Thin POST wrapper preserving the existing notification-sender API.
+
+        Delegates to :meth:`_request` and re-applies the "treat 4xx as
+        failure" semantics its callers (``send_dm`` / ``send_channel_message``)
+        rely on — :meth:`_request` returns 4xx responses so other callers can
+        inspect Discord error codes.
+        """
+        response = self._request("POST", url, json_body=json_body)
+        if response is None or response.status_code >= 400:
+            return None
+        return response
+
+    def _request(
+        self,
+        method: str,
+        url: str,
+        json_body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> httpx.Response | None:
+        """Shared HTTP helper: auth, one retry on 5xx, respect 429 Retry-After.
+
+        Returns the response for any 2xx **or** 4xx (so callers can inspect
+        Discord error codes); returns ``None`` on transport error, empty
+        token, or an exhausted 5xx/429 retry.
+        """
         if not self.bot_token:
             logger.error("DISCORD_BOT_TOKEN empty — outbound disabled")
             return None
@@ -92,7 +214,13 @@ class DiscordRESTClient:
         for attempt in range(2):  # initial + 1 retry
             try:
                 with httpx.Client(timeout=self.DEFAULT_TIMEOUT) as client:
-                    response = client.post(url, json=json_body, headers=headers)
+                    response = client.request(
+                        method,
+                        url,
+                        json=json_body,
+                        params=params,
+                        headers=headers,
+                    )
             except (httpx.TimeoutException, httpx.ConnectError) as exc:
                 logger.warning("Discord REST request failed: %s", exc)
                 return None
@@ -119,13 +247,13 @@ class DiscordRESTClient:
                 )
                 return None
 
-            # 4xx (permanent)
+            # 4xx (permanent) — return so the caller can inspect the code.
             logger.error(
                 "Discord 4xx %s for %s: %s",
                 response.status_code,
                 url,
                 response.text[:200],
             )
-            return None
+            return response
 
         return None

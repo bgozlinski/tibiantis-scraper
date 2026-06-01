@@ -9,18 +9,49 @@ Owns two concerns:
   (``announce_unannounced_deaths``).
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TypedDict
 import logging
 import time
 
 from django.db import IntegrityError, transaction
+from django.utils import timezone as django_timezone
 
 from apps.deaths.models import DeathEvent
 from apps.notifications import get_death_handler
+from apps.notifications.discord_client import BulkDeleteAgeError, DiscordRESTClient
 from discord_bot.models import DiscordChannel
 
 logger = logging.getLogger(__name__)
+
+# Death-channel cleanup constants (added 2026-06-01, see spec
+# 2026-06-01-death-channel-cleanup-design.md).
+RETENTION_DAYS = 3
+DISCORD_EPOCH_MS = 1420070400000
+
+
+def snowflake_for_datetime(dt: datetime) -> int:
+    """Encode a UTC datetime as a Discord snowflake (high 42 bits = timestamp).
+
+    Discord message IDs are monotonically time-ordered, so passing this
+    value as the ``before=`` query parameter on
+    ``GET /channels/{id}/messages`` returns only messages older than ``dt``
+    without scanning the whole channel. Lower 22 bits (worker/process/seq)
+    are zero — fine for a *boundary* (we want "everything before this
+    timestamp", not a specific message).
+    """
+    unix_ms = int(dt.timestamp() * 1000)
+    return (unix_ms - DISCORD_EPOCH_MS) << 22
+
+
+class CleanupError(Exception):
+    """Raised by :func:`cleanup_death_channel` on Discord REST failure.
+
+    The caller (``cleanup_death_channels`` task) catches this, increments
+    ``fail_count``, and moves on to the next guild. ``last_cleanup_at`` is
+    NOT updated when this is raised, so ``/deaths cleanup status`` will show
+    staleness — a built-in alarm for ops.
+    """
 
 
 class DeathPayload(TypedDict):
@@ -113,3 +144,82 @@ def announce_unannounced_deaths() -> dict[str, int]:
     }
     logger.info("announce_unannounced_deaths: %s", summary)
     return summary
+
+
+def cleanup_death_channel(channel: DiscordChannel) -> dict[str, int]:
+    """Delete messages older than ``RETENTION_DAYS`` in ``channel.channel_id``.
+
+    Algorithm:
+      1. ``cutoff = now - RETENTION_DAYS``;
+      2. paginate Discord messages with ``before=snowflake(cutoff)`` until an
+         empty page comes back;
+      3. filter pinned messages client-side;
+      4. delete in chunks of 100 via bulk-delete; fall back to per-message
+         DELETE for ``N == 1`` chunks AND for chunks that trip
+         :class:`BulkDeleteAgeError` (messages > 14d old);
+      5. on success, bump ``last_cleanup_at = now()``.
+
+    Raises :class:`CleanupError` on the first unrecoverable REST failure — the
+    caller decides whether to retry on the next cron tick.
+    """
+    client = DiscordRESTClient()
+    cutoff = django_timezone.now() - timedelta(days=RETENTION_DAYS)
+    before_id = snowflake_for_datetime(cutoff)
+    to_delete: list[int] = []
+
+    while True:
+        batch = client.fetch_channel_messages(
+            channel_id=channel.channel_id,
+            before=before_id,
+            limit=100,
+        )
+        if not batch:
+            break
+        eligible = [int(m["id"]) for m in batch if not m.get("pinned")]
+        to_delete.extend(eligible)
+        before_id = int(batch[-1]["id"])
+
+    deleted = 0
+    for chunk in _chunked(to_delete, 100):
+        if len(chunk) == 1:
+            if not client.delete_message(
+                channel_id=channel.channel_id, message_id=chunk[0]
+            ):
+                raise CleanupError(
+                    f"delete_message failed guild={channel.guild_id} msg={chunk[0]}"
+                )
+            deleted += 1
+            continue
+
+        try:
+            ok = client.bulk_delete_messages(
+                channel_id=channel.channel_id, message_ids=chunk
+            )
+        except BulkDeleteAgeError:
+            logger.info(
+                "bulk-delete age fallback for guild=%s chunk_size=%s",
+                channel.guild_id,
+                len(chunk),
+            )
+            for mid in chunk:
+                if not client.delete_message(
+                    channel_id=channel.channel_id, message_id=mid
+                ):
+                    raise CleanupError(
+                        f"delete_message failed guild={channel.guild_id} msg={mid}"
+                    ) from None
+                deleted += 1
+            continue
+
+        if not ok:
+            raise CleanupError(f"bulk_delete_messages failed guild={channel.guild_id}")
+        deleted += len(chunk)
+
+    channel.last_cleanup_at = django_timezone.now()
+    channel.save(update_fields=["last_cleanup_at"])
+    return {"deleted": deleted}
+
+
+def _chunked(items: list[int], size: int) -> list[list[int]]:
+    """Split a list into consecutive chunks of at most ``size``."""
+    return [items[i : i + size] for i in range(0, len(items), size)]

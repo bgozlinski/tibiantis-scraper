@@ -8,7 +8,9 @@ contact.
 
 from __future__ import annotations
 
+from datetime import datetime
 import logging
+from typing import TypedDict
 
 from django.db import transaction
 
@@ -175,3 +177,62 @@ def list_all_deathwatches() -> list[DeathWatch]:
     QuerySets across the sync/async boundary).
     """
     return list(list_all_death_watches())
+
+
+# ─── Death-channel cleanup (2026-06-01) ─────────────────────────────────────
+# Thin guild-scoped wrappers consumed by the `/deaths cleanup` slash commands.
+# Flag lives on DiscordChannel; a guild must register a channel first (via
+# `/deaths threshold`) before cleanup can be toggled.
+
+
+class CleanupStatus(TypedDict):
+    """Status payload consumed by ``/deaths cleanup status``."""
+
+    enabled: bool
+    last_cleanup_at: datetime | None
+    channel_id: int
+
+
+def enable_cleanup_for_guild(guild_id: int) -> bool:
+    """Set ``cleanup_enabled=True`` on the guild's DiscordChannel.
+
+    Returns False (no-op) when no DiscordChannel exists for the guild — cog
+    surfaces a "run /deaths threshold first" message in that case.
+    """
+    updated = DiscordChannel.objects.filter(guild_id=guild_id).update(
+        cleanup_enabled=True
+    )
+    if updated:
+        logger.info("Enabled cleanup for guild=%s", guild_id)
+        return True
+    return False
+
+
+def disable_cleanup_for_guild(guild_id: int) -> bool:
+    """Set ``cleanup_enabled=False`` on the guild's DiscordChannel.
+
+    Returns False (no-op) when no DiscordChannel exists for the guild.
+    """
+    updated = DiscordChannel.objects.filter(guild_id=guild_id).update(
+        cleanup_enabled=False
+    )
+    if updated:
+        logger.info("Disabled cleanup for guild=%s", guild_id)
+        return True
+    return False
+
+
+def get_cleanup_status(guild_id: int) -> CleanupStatus | None:
+    """Return the cleanup state for the guild, or ``None`` if no channel registered.
+
+    Cog renders the ``None`` case as "no channel registered".
+    """
+    try:
+        channel = DiscordChannel.objects.get(guild_id=guild_id)
+    except DiscordChannel.DoesNotExist:
+        return None
+    return CleanupStatus(
+        enabled=channel.cleanup_enabled,
+        last_cleanup_at=channel.last_cleanup_at,
+        channel_id=channel.channel_id,
+    )

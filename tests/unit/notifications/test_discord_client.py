@@ -8,7 +8,10 @@ from typing import Any
 import httpx
 import pytest
 
-from apps.notifications.discord_client import DiscordRESTClient
+from apps.notifications.discord_client import (
+    BulkDeleteAgeError,
+    DiscordRESTClient,
+)
 
 
 class MockHttpx:
@@ -270,3 +273,158 @@ def test_client_respects_retry_after_on_429(
     assert ok is True
     assert len(mock_httpx.requests) == 2
     assert sleeps == [0.5]
+
+
+# === fetch_channel_messages ===
+
+
+def test_fetch_channel_messages_returns_parsed_list(mock_httpx: MockHttpx) -> None:
+    """Happy path: GET returns 200 with a JSON array of message objects."""
+    payload = [
+        {"id": "100", "content": "hi", "pinned": False},
+        {"id": "99", "content": "older", "pinned": True},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert "/channels/12345/messages" in str(request.url)
+        return httpx.Response(200, json=payload)
+
+    mock_httpx.set_handler(handler)
+    client = DiscordRESTClient(bot_token="tok")
+
+    result = client.fetch_channel_messages(channel_id=12345, limit=100)
+
+    assert result == payload
+
+
+def test_fetch_channel_messages_sends_before_and_limit(
+    mock_httpx: MockHttpx,
+) -> None:
+    """`before` and `limit` are passed as query parameters."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["before"] == "999"
+        assert request.url.params["limit"] == "50"
+        return httpx.Response(200, json=[])
+
+    mock_httpx.set_handler(handler)
+    client = DiscordRESTClient(bot_token="tok")
+
+    client.fetch_channel_messages(channel_id=1, before=999, limit=50)
+
+
+def test_fetch_channel_messages_empty_on_4xx(mock_httpx: MockHttpx) -> None:
+    """4xx returns empty list — caller decides how to react (loop exit)."""
+    mock_httpx.set_handler(lambda _r: httpx.Response(403, json={}))
+    client = DiscordRESTClient(bot_token="tok")
+
+    result = client.fetch_channel_messages(channel_id=1)
+
+    assert result == []
+
+
+def test_fetch_channel_messages_retries_on_5xx(mock_httpx: MockHttpx) -> None:
+    """Existing retry policy (single retry on 5xx) carried into GET path."""
+    responses = iter([httpx.Response(503), httpx.Response(200, json=[{"id": "1"}])])
+    mock_httpx.set_handler(lambda _r: next(responses))
+    client = DiscordRESTClient(bot_token="tok")
+
+    result = client.fetch_channel_messages(channel_id=1)
+
+    assert result == [{"id": "1"}]
+    assert len(mock_httpx.requests) == 2
+
+
+# === bulk_delete_messages ===
+
+
+def test_bulk_delete_messages_happy_path(mock_httpx: MockHttpx) -> None:
+    """POST /channels/{id}/messages/bulk-delete with body={'messages': [...]}.
+
+    Discord requires the IDs as strings in the body.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert "/channels/12/messages/bulk-delete" in str(request.url)
+        body = request.read()
+        # Discord wants strings, not ints
+        assert b'"100"' in body
+        assert b'"200"' in body
+        return httpx.Response(204)  # success: no content
+
+    mock_httpx.set_handler(handler)
+    client = DiscordRESTClient(bot_token="tok")
+
+    ok = client.bulk_delete_messages(channel_id=12, message_ids=[100, 200])
+
+    assert ok is True
+
+
+def test_bulk_delete_messages_raises_age_error_on_50034(
+    mock_httpx: MockHttpx,
+) -> None:
+    """Discord returns 400 with code 50034 when any message is >14 days old.
+
+    Service layer catches this to fall back to single-delete (any age).
+    """
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={"code": 50034, "message": "You can only bulk delete messages..."},
+        )
+
+    mock_httpx.set_handler(handler)
+    client = DiscordRESTClient(bot_token="tok")
+
+    with pytest.raises(BulkDeleteAgeError):
+        client.bulk_delete_messages(channel_id=1, message_ids=[1, 2])
+
+
+def test_bulk_delete_messages_returns_false_on_403(mock_httpx: MockHttpx) -> None:
+    """Bot lacks MANAGE_MESSAGES → 403 → False, NOT raise. Service treats as failure."""
+    mock_httpx.set_handler(lambda _r: httpx.Response(403, json={"code": 50013}))
+    client = DiscordRESTClient(bot_token="tok")
+
+    ok = client.bulk_delete_messages(channel_id=1, message_ids=[1, 2])
+
+    assert ok is False
+
+
+# === delete_message ===
+
+
+def test_delete_message_happy_path(mock_httpx: MockHttpx) -> None:
+    """DELETE /channels/{cid}/messages/{mid} → 204 → True."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "DELETE"
+        assert "/channels/12/messages/100" in str(request.url)
+        return httpx.Response(204)
+
+    mock_httpx.set_handler(handler)
+    client = DiscordRESTClient(bot_token="tok")
+
+    assert client.delete_message(channel_id=12, message_id=100) is True
+
+
+def test_delete_message_treats_404_as_success(mock_httpx: MockHttpx) -> None:
+    """Already-deleted message → 404 → True (idempotent semantics).
+
+    Cleanup may race with a manual delete by an admin; treating 404 as
+    success keeps the task from logging spurious failures.
+    """
+    mock_httpx.set_handler(lambda _r: httpx.Response(404, json={"code": 10008}))
+    client = DiscordRESTClient(bot_token="tok")
+
+    assert client.delete_message(channel_id=1, message_id=1) is True
+
+
+def test_delete_message_returns_false_on_403(mock_httpx: MockHttpx) -> None:
+    """Missing permissions → 403 → False."""
+    mock_httpx.set_handler(lambda _r: httpx.Response(403, json={"code": 50013}))
+    client = DiscordRESTClient(bot_token="tok")
+
+    assert client.delete_message(channel_id=1, message_id=1) is False
